@@ -1,3 +1,3 @@
-mod chunk;
+pub mod chunk;
 mod value;
-mod vm;
+pub mod vm;

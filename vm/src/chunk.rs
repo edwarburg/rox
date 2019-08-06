@@ -1,77 +1,80 @@
-extern crate enum_repr;
-
-use crate::value::Value;
-use enum_repr::EnumRepr;
 use std::fmt;
 
-type ConstantPoolIndex = u8;
-type LineNumber = usize;
+use crate::value::Value;
+use std::error::Error;
+
+pub type ConstantPoolIndex = u8;
+pub const MAX_CONSTANTS: usize = std::u8::MAX as usize;
+pub type LineNumber = usize;
 
 pub struct Chunk {
-    bytes: Vec<u8>,
+    // TODO this is less efficient than it could be because instructions are as wide as their widest member. Revisit and do the whole byte-packing thing later. KISS for now.
+    instructions: Vec<Instruction>,
     constant_pool: Vec<Value>,
     lines: Vec<LineNumber>,
+}
+
+#[derive(Debug)]
+pub enum ChunkError {
+    ConstantPoolOverflow,
+}
+
+impl Error for ChunkError {}
+impl fmt::Display for ChunkError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl Chunk {
     pub fn new() -> Chunk {
         Chunk {
-            bytes: Vec::new(),
+            instructions: Vec::new(),
             constant_pool: Vec::new(),
             lines: Vec::new(),
         }
     }
 
-    pub fn add_constant(&mut self, constant: Value) {
+    pub fn add_constant(&mut self, constant: Value) -> Result<ConstantPoolIndex, ChunkError> {
+        if self.constant_pool.len() >= MAX_CONSTANTS {
+            return Err(ChunkError::ConstantPoolOverflow);
+        }
+
+        let index = self.constant_pool.len();
         self.constant_pool.push(constant);
+        Ok(index as ConstantPoolIndex)
     }
 
-    pub fn constant_at(&self, index: usize) -> Option<&Value> {
-        self.constant_pool.get(index)
+    pub fn constants(&self) -> &[Value] {
+        &self.constant_pool[..]
     }
 
-    pub fn add_instruction(&mut self, instruction: &Instruction, line: LineNumber) {
+    pub fn add_instruction(&mut self, instruction: Instruction, line: LineNumber) {
         self.lines.push(line);
-        instruction.encode(&mut self.bytes);
+        self.instructions.push(instruction)
     }
 
-    pub fn instruction_at_byte(&self, index: usize) -> Option<Instruction> {
-        self.bytes
-            .get(index..)
-            .and_then(|slice| Instruction::decode(slice))
-    }
-
-    pub fn instruction_len(&self) -> usize {
-        self.bytes.len()
+    pub fn instructions(&self) -> &[Instruction] {
+        &self.instructions[..]
     }
 }
 
 impl fmt::Display for Chunk {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut i: usize = 0;
-        let inst_size = self.bytes.len();
-        if inst_size == 0 {
+        if self.instructions.is_empty() {
             write!(f, "<empty>");
             return Ok(());
         }
-        let mut inst_num = 0;
-        while i < inst_size {
-            write!(f, "{:04} {:4}     ", i, self.lines[inst_num]);
-            if let Some(inst) = Instruction::decode(&self.bytes[i..]) {
-                write!(f, "{}", inst)?;
-                i += inst.size();
+        for (i, inst) in self.instructions.iter().enumerate() {
+            write!(f, "{:04} {:4}     {}", i, self.lines[i], inst);
 
-                match inst {
-                    Instruction::Constant(index) => {
-                        write!(f, "    ; value: {}", self.constant_pool[index as usize])?
-                    }
-                    _ => {}
+            match inst {
+                Instruction::Constant(index) => {
+                    write!(f, "    ; value: {}", self.constant_pool[*index as usize])?
                 }
-            } else {
-                write!(f, "UNKNOWN INSTRUCTION {}", self.bytes[i])?;
+                _ => {}
             }
             write!(f, "\n");
-            inst_num += 1;
         }
         Ok(())
     }
@@ -83,80 +86,79 @@ impl fmt::Debug for Chunk {
     }
 }
 
-#[derive(Debug, Eq, PartialOrd, PartialEq)]
-pub enum Instruction {
-    Return,
-    Constant(ConstantPoolIndex),
-    Negate,
+macro_rules! replace_tt {
+    ($_t:tt $sub:tt) => {
+        $sub
+    };
 }
 
-// TODO lots of low hanging fruit in this file for writing macros mapping back and forth between OpCode and Instruction
+macro_rules! instructions {
+    ( $( $name:ident $( ( $( $t:ty ),* ) )? => $size:expr ),* ) => {
+        #[derive(Debug, Eq, PartialOrd, PartialEq)]
+        pub enum Instruction {
+            $(
+                $name$(($($t)*))?,
+            )*
+        }
 
-impl Instruction {
-    fn decode(bytes: &[u8]) -> Option<Instruction> {
-        bytes
-            .get(0)
-            .and_then(|byte| OpCode::from_repr(*byte))
-            .and_then(|op| match op {
-                OpCode::Return => Some(Instruction::Return),
-                OpCode::Constant => bytes.get(1).map(|byte| Instruction::Constant(*byte)),
-                OpCode::Negate => Some(Instruction::Negate),
-            })
-    }
-
-    // TODO byte sink as output rather than Vec?
-    // TODO or figure out serde?
-    fn encode(&self, output: &mut Vec<u8>) {
-        match self {
-            Instruction::Return => output.push(OpCode::Return.repr()),
-            Instruction::Constant(index) => {
-                output.push(OpCode::Constant.repr());
-                output.push(*index);
+        impl Instruction {
+            pub fn get_opcode(&self) -> OpCode {
+                match self {
+                    $(
+                        Instruction::$name$(($(replace_tt!($t _))*))? => OpCode::$name,
+                    )*
+                }
             }
-            Instruction::Negate => output.push(OpCode::Negate.repr()),
-        }
-    }
 
-    pub fn size(&self) -> usize {
-        match self {
-            Instruction::Return | Instruction::Negate => 1,
-            Instruction::Constant(_) => 2,
+            pub fn size(&self) -> usize {
+                match self {
+                    $(
+                        Instruction::$name$(($(replace_tt!($t _))*))? => $size,
+                    )*
+                }
+            }
         }
-    }
 
-    pub fn get_opcode(&self) -> OpCode {
-        match self {
-            Instruction::Return => OpCode::Return,
-            Instruction::Constant(_) => OpCode::Constant,
-            Instruction::Negate => OpCode::Negate,
+        #[derive(Debug)]
+        pub enum OpCode {
+            $(
+                $name,
+            )*
         }
-    }
+
+        impl fmt::Display for OpCode {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                match self {
+                    $(
+                        OpCode::$name => write!(f, "{:?}", self),
+                    )*
+                }
+            }
+        }
+    };
+}
+
+instructions! {
+    Return => 1,
+    Constant(ConstantPoolIndex) => 2,
+    Negate => 1,
+    Add => 1,
+    Subtract => 1,
+    Multiply => 1,
+    Divide => 1
 }
 
 impl fmt::Display for Instruction {
+    // TODO incorporate into macro?
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Instruction::Return => write!(f, "RET"),
             Instruction::Constant(index) => write!(f, "LDC {:4}", *index),
             Instruction::Negate => write!(f, "NEG"),
-        }
-    }
-}
-
-#[EnumRepr(type = "u8")]
-#[derive(Debug)]
-pub enum OpCode {
-    Return = 0,
-    Constant = 1,
-    Negate = 2,
-}
-
-impl fmt::Display for OpCode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            OpCode::Return => write!(f, "Return"),
-            OpCode::Constant => write!(f, "Constant"),
-            OpCode::Negate => write!(f, "Negate"),
+            Instruction::Add => write!(f, "ADD"),
+            Instruction::Subtract => write!(f, "SUB"),
+            Instruction::Multiply => write!(f, "MUL"),
+            Instruction::Divide => write!(f, "DIV"),
         }
     }
 }
@@ -170,8 +172,8 @@ mod tests {
     fn test() {
         let mut chunk = Chunk::new();
         chunk.add_constant(Value::Double(1.2));
-        chunk.add_instruction(&Instruction::Constant(0), 1);
-        chunk.add_instruction(&Instruction::Return, 1);
+        chunk.add_instruction(Instruction::Constant(0), 1);
+        chunk.add_instruction(Instruction::Return, 1);
         println!("{}", chunk);
     }
 }
