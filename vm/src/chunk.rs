@@ -62,7 +62,7 @@ impl Chunk {
 impl fmt::Display for Chunk {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.instructions.is_empty() {
-            write!(f, "<empty>");
+            write!(f, "<empty>\n");
             return Ok(());
         }
         for (i, inst) in self.instructions.iter().enumerate() {

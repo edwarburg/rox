@@ -1,3 +1,4 @@
 pub mod chunk;
-mod value;
+pub mod compiler;
+pub mod value;
 pub mod vm;

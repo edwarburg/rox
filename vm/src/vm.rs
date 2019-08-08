@@ -38,7 +38,7 @@ impl fmt::Debug for Stack {
     }
 }
 
-struct VM<'a> {
+pub struct VM<'a> {
     chunk: &'a Chunk,
     ip: usize,
     stack: Stack,
@@ -66,7 +66,7 @@ macro_rules! binary_op {
 }
 
 impl VM<'_> {
-    fn new(chunk: &Chunk) -> VM {
+    pub fn new(chunk: &Chunk) -> VM {
         VM {
             chunk,
             ip: 0,
@@ -74,7 +74,7 @@ impl VM<'_> {
         }
     }
 
-    fn run(&mut self) -> InterpretResult {
+    pub fn run(&mut self) -> InterpretResult {
         let constants = self.chunk.constants();
         let instructions = self.chunk.instructions();
         let num_instructions = instructions.len();

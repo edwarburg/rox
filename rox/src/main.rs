@@ -40,12 +40,12 @@ fn repl() {
 
 fn interpret(line: &str) -> vm::vm::InterpretResult {
     println!("{}", line);
-    // TODO compiler call goes here
-    // TODO invoke chunk goes here
-    Ok(())
+    let chunk = vm::compiler::compile(line);
+    let mut vm = vm::vm::VM::new(&chunk);
+    vm.run()
 }
 
 fn run_file(path: &str) {
     let text = fs::read_to_string(path).unwrap();
-    interpret(path).unwrap();
+    interpret(path);
 }
