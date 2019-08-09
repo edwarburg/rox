@@ -40,9 +40,9 @@ fn repl() {
 
 fn interpret(line: &str) -> vm::vm::InterpretResult {
     println!("{}", line);
-    let chunk = vm::compiler::compile(line);
+    let chunk = vm::compiler::compile(line)?;
     let mut vm = vm::vm::VM::new(&chunk);
-    vm.run()
+    return vm.run();
 }
 
 fn run_file(path: &str) {

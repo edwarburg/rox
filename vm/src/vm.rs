@@ -1,4 +1,6 @@
 use crate::chunk::{Chunk, Instruction};
+use crate::compiler;
+use crate::compiler::CompileError;
 use crate::value::Value;
 use std::fmt;
 
@@ -103,8 +105,15 @@ impl VM<'_> {
 }
 
 pub enum InterpretError {
+    CompileError(compiler::CompileError),
     UnknownInstruction(usize),
     UnknownValue(Value),
+}
+
+impl Into<InterpretError> for CompileError {
+    fn into(self) -> InterpretError {
+        InterpretError::CompileError(self)
+    }
 }
 
 pub type InterpretResult = Result<(), InterpretError>;

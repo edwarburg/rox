@@ -2,38 +2,23 @@ use crate::chunk::{Chunk, LineNumber};
 use std::borrow::Cow;
 use std::fmt;
 
-pub fn compile(input: &str) -> Chunk {
-    // TODO actually compile
-    let chunk = Chunk::new();
-    let mut scanner = Scanner {
-        start: input,
-        curr_len: 0,
-        line: 1,
-    };
+#[derive(Debug)]
+pub enum CompileError {
+    Error(String),
+}
 
-    let mut line = 0;
-    loop {
-        let token = scanner.scan_token();
-        if token.line != line {
-            print!("{:4} ", token.line);
-            line = token.line;
-        } else {
-            print!("   | ");
-        }
-
-        // TODO Why doesn't padding work... oh well.
-        println!("{:>12} '{}'", token.ty, token.text);
-
-        if token.ty == TokenType::Eof {
-            break;
-        }
-
-        // TODO continue past error by consuming error token text when making error token
-        if token.ty == TokenType::Error {
-            break;
-        }
+impl fmt::Display for CompileError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
-    chunk
+}
+
+impl std::error::Error for CompileError {}
+
+pub fn compile(input: &str) -> Result<Chunk, CompileError> {
+    let scanner = Scanner::new(input);
+    let mut parser = Parser::new(&scanner);
+    parser.parse()
 }
 
 #[derive(Debug)]
@@ -43,7 +28,15 @@ struct Scanner<'a> {
     line: LineNumber,
 }
 
-impl Scanner<'_> {
+impl<'a> Scanner<'a> {
+    fn new(input: &'a str) -> Scanner<'a> {
+        Scanner {
+            start: input,
+            curr_len: 0,
+            line: 1,
+        }
+    }
+
     fn scan_token(&mut self) -> Token {
         self.skip_whitespace();
 
@@ -166,7 +159,7 @@ impl Scanner<'_> {
         token
     }
 
-    fn error_token<'a, S>(&self, message: S) -> Token<'a>
+    fn error_token<S>(&self, message: S) -> Token<'a>
     where
         S: Into<Cow<'a, str>>,
     {
@@ -375,13 +368,72 @@ impl fmt::Display for TokenType {
     }
 }
 
+struct Parser<'a> {
+    chunk: Chunk,
+    scanner: &'a Scanner<'a>,
+    curr: Option<Token<'a>>,
+    prev: Option<Token<'a>>,
+}
+
+impl<'a> Parser<'a> {
+    fn new(scanner: &'a Scanner) -> Parser<'a> {
+        Parser {
+            chunk: Chunk::new(),
+            scanner,
+            curr: None,
+            prev: None,
+        }
+    }
+
+    fn parse(&mut self) -> Result<Chunk, CompileError> {
+        unimplemented!()
+    }
+
+    fn consume(&mut self) -> Token {
+        unimplemented!()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::compiler::{compile, Scanner, TokenType};
+
     #[test]
-    fn test() {
-        let chunk = crate::compiler::compile(
-            "*()+   /!!=\t<\r<=>>=\n\n===// this is a comment ;*\n!\"this is a string !@#$abc\"123 123.456 123. abc var return true yes",
-        );
-        println!("{:?}", &chunk);
+    fn compile_test() {
+        let chunk = compile("");
+        print!("{:?}", chunk);
+    }
+
+    #[test]
+    fn scanner_test() {
+        let input = "*()+   /!!=\t<\r<=>>=\n\n===// this is a comment ;*\n!\"this is a string !@#$abc\"123 123.456 123. abc var return true yes";
+        let mut scanner = Scanner {
+            start: input,
+            curr_len: 0,
+            line: 1,
+        };
+
+        let mut line = 0;
+        loop {
+            let token = scanner.scan_token();
+            if token.line != line {
+                print!("{:4} ", token.line);
+                line = token.line;
+            } else {
+                print!("   | ");
+            }
+
+            // TODO Why doesn't padding work... oh well.
+            println!("{:>12} '{}'", token.ty, token.text);
+
+            if token.ty == TokenType::Eof {
+                break;
+            }
+
+            // TODO continue past error by consuming error token text when making error token
+            if token.ty == TokenType::Error {
+                break;
+            }
+        }
     }
 }
