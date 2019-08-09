@@ -1,4 +1,5 @@
 use crate::chunk::{Chunk, LineNumber};
+use std::borrow::Cow;
 use std::fmt;
 
 pub fn compile(input: &str) -> Chunk {
@@ -27,6 +28,7 @@ pub fn compile(input: &str) -> Chunk {
             break;
         }
 
+        // TODO continue past error by consuming error token text when making error token
         if token.ty == TokenType::Error {
             break;
         }
@@ -49,35 +51,45 @@ impl Scanner<'_> {
             return self.make_token(TokenType::Eof);
         }
 
-        let c = match self.advance() {
-            Some(c) => c,
-            None => return self.error_token("Tried to advance past EOF"),
-        };
+        if let Some(c) = self.advance() {
+            match c {
+                '(' => return self.make_token(TokenType::LeftParen),
+                ')' => return self.make_token(TokenType::RightParen),
+                '{' => return self.make_token(TokenType::LeftBrace),
+                '}' => return self.make_token(TokenType::RightBrace),
+                ';' => return self.make_token(TokenType::Semicolon),
+                ',' => return self.make_token(TokenType::Comma),
+                '.' => return self.make_token(TokenType::Dot),
+                '-' => return self.make_token(TokenType::Minus),
+                '+' => return self.make_token(TokenType::Plus),
+                '/' => return self.make_token(TokenType::Slash),
+                '*' => return self.make_token(TokenType::Star),
 
-        match c {
-            '(' => return self.make_token(TokenType::LeftParen),
-            ')' => return self.make_token(TokenType::RightParen),
-            '{' => return self.make_token(TokenType::LeftBrace),
-            '}' => return self.make_token(TokenType::RightBrace),
-            ';' => return self.make_token(TokenType::Semicolon),
-            ',' => return self.make_token(TokenType::Comma),
-            '.' => return self.make_token(TokenType::Dot),
-            '-' => return self.make_token(TokenType::Minus),
-            '+' => return self.make_token(TokenType::Plus),
-            '/' => return self.make_token(TokenType::Slash),
-            '*' => return self.make_token(TokenType::Star),
+                '!' => return self.if_accept_then_make('=', TokenType::BangEqual, TokenType::Bang),
+                '=' => {
+                    return self.if_accept_then_make('=', TokenType::EqualEqual, TokenType::Equal)
+                }
+                '<' => return self.if_accept_then_make('=', TokenType::LessEqual, TokenType::Less),
+                '>' => {
+                    return self.if_accept_then_make(
+                        '=',
+                        TokenType::GreaterEqual,
+                        TokenType::Greater,
+                    )
+                }
 
-            '!' => return self.if_accept_then_make('=', TokenType::BangEqual, TokenType::Bang),
-            '=' => return self.if_accept_then_make('=', TokenType::EqualEqual, TokenType::Equal),
-            '<' => return self.if_accept_then_make('=', TokenType::LessEqual, TokenType::Less),
-            '>' => {
-                return self.if_accept_then_make('=', TokenType::GreaterEqual, TokenType::Greater)
+                '"' => return self.make_string(),
+
+                '0'..='9' => return self.make_number(),
+
+                'a'..='z' | 'A'..='Z' | '_' => return self.make_ident_or_kw(),
+
+                _ => return self.error_token(format!("unexpected character: '{}'", c)),
             }
-
-            _ => return self.error_token("unexpected character"),
+        } else {
+            return self.error_token("Tried to advance past EOF");
         }
 
-        // TODO how to format error message here? calling format!() creates a temporary string that then gets returned in the Token and doesn't live long enough.
         return self.error_token("unknown token");
     }
 
@@ -91,7 +103,6 @@ impl Scanner<'_> {
     }
 
     fn take(&mut self, chars: usize) {
-        //        dbg!(chars);
         self.curr_len += chars;
     }
 
@@ -105,7 +116,6 @@ impl Scanner<'_> {
 
     fn accept(&mut self, c: char) -> bool {
         if let Some(peeked) = self.peek() {
-            //            dbg!(peeked);
             if peeked == c {
                 self.take(1);
                 return true;
@@ -116,7 +126,19 @@ impl Scanner<'_> {
     }
 
     fn peek(&self) -> Option<char> {
-        self.start.chars().nth(self.curr_len)
+        self.peek_at(0)
+    }
+
+    fn peek_at(&self, i: usize) -> Option<char> {
+        // TODO keep self.chars() around in Scanner for efficiency, maybe
+        self.start.chars().nth(self.curr_len + i)
+    }
+
+    fn matches_at<F>(&self, i: usize, f: F) -> bool
+    where
+        F: FnOnce(char) -> bool,
+    {
+        self.peek_at(i).map_or(false, f)
     }
 
     fn unsafe_peek(&self) -> char {
@@ -135,26 +157,20 @@ impl Scanner<'_> {
         } else {
             if_no_match
         };
-        //        dbg!(&self, &ty);
         self.make_token(ty)
     }
 
     fn make_token(&mut self, ty: TokenType) -> Token {
-        let token = Token {
-            ty,
-            text: &self.start[..self.curr_len],
-            line: self.line,
-        };
+        let token = Token::new(ty, &self.start[..self.curr_len], self.line);
         self.advance_start();
         token
     }
 
-    fn error_token<'a>(&self, message: &'a str) -> Token<'a> {
-        Token {
-            ty: TokenType::Error,
-            text: message,
-            line: self.line,
-        }
+    fn error_token<'a, S>(&self, message: S) -> Token<'a>
+    where
+        S: Into<Cow<'a, str>>,
+    {
+        Token::new(TokenType::Error, message, self.line)
     }
 
     fn advance_start(&mut self) {
@@ -166,14 +182,26 @@ impl Scanner<'_> {
     }
 
     fn skip_whitespace(&mut self) {
-        let mut skipped: usize = 0;
-        loop {
+        'outer: loop {
             if let Some(peeked) = self.peek() {
                 match peeked {
                     ' ' | '\r' | '\t' => self.take(1),
                     '\n' => {
                         self.take(1);
                         self.line += 1;
+                    }
+                    '/' => {
+                        if self.matches_at(1, |c| c == '/') {
+                            self.take(2);
+                            while let Some(c) = self.peek() {
+                                self.take(1);
+                                if c == '\n' {
+                                    break;
+                                }
+                            }
+                        } else {
+                            break 'outer;
+                        }
                     }
                     _ => break,
                 }
@@ -189,13 +217,103 @@ impl Scanner<'_> {
         self.take(n);
         self.advance_start();
     }
+
+    fn make_string(&mut self) -> Token {
+        // we already checked curr == '"', so take it
+        self.take(1);
+        let mut terminated = false;
+        while let Some(c) = self.peek() {
+            if c == '"' {
+                terminated = true;
+                self.take(1);
+                break;
+            }
+            if c == '\n' {
+                self.line += 1;
+            }
+            self.take(1);
+        }
+
+        if !terminated {
+            return self.error_token("Unterminated string literal");
+        }
+
+        self.make_token(TokenType::String)
+    }
+
+    fn make_number(&mut self) -> Token {
+        // we already checked is_digit(curr), so take it
+        self.take(1);
+        while self.matches_at(0, |c| is_digit(c)) {
+            self.take(1);
+        }
+
+        if self.matches_at(0, |c| c == '.') && self.matches_at(1, |c| is_digit(c)) {
+            self.take(1);
+            while self.matches_at(0, |c| is_digit(c)) {
+                self.take(1);
+            }
+        }
+
+        self.make_token(TokenType::Number)
+    }
+
+    fn make_ident_or_kw(&mut self) -> Token {
+        // we already checked is_alpha(curr) || curr == '_', so take it
+        self.take(1);
+        while self.matches_at(0, |c| is_valid_ident_char(c)) {
+            self.take(1);
+        }
+        // TODO could have done the fancy trie thing from the book... but this is much easier
+        let ty = match &self.start[..self.curr_len] {
+            "and" => TokenType::And,
+            "class" => TokenType::Class,
+            "else" => TokenType::Else,
+            "false" => TokenType::False,
+            "for" => TokenType::For,
+            "fun" => TokenType::Fun,
+            "if" => TokenType::If,
+            "nil" => TokenType::Nil,
+            "or" => TokenType::Or,
+            "print" => TokenType::Print,
+            "return" => TokenType::Return,
+            "super" => TokenType::Super,
+            "this" => TokenType::This,
+            "true" => TokenType::True,
+            "var" => TokenType::Var,
+            "while" => TokenType::While,
+            _ => TokenType::Identifier,
+        };
+        self.make_token(ty)
+    }
+}
+
+fn is_digit(c: char) -> bool {
+    c.is_ascii_digit()
+}
+
+fn is_valid_ident_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
 }
 
 #[derive(Debug, Eq, PartialEq)]
 struct Token<'a> {
     ty: TokenType,
-    text: &'a str,
+    text: Cow<'a, str>,
     line: LineNumber,
+}
+
+impl<'a> Token<'a> {
+    pub fn new<S>(ty: TokenType, text: S, line: LineNumber) -> Token<'a>
+    where
+        S: Into<Cow<'a, str>>,
+    {
+        Token {
+            ty,
+            text: text.into(),
+            line,
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -261,7 +379,9 @@ impl fmt::Display for TokenType {
 mod tests {
     #[test]
     fn test() {
-        let chunk = crate::compiler::compile("*()+   /!!=\t<\r<=>>=\n\n===");
+        let chunk = crate::compiler::compile(
+            "*()+   /!!=\t<\r<=>>=\n\n===// this is a comment ;*\n!\"this is a string !@#$abc\"123 123.456 123. abc var return true yes",
+        );
         println!("{:?}", &chunk);
     }
 }
