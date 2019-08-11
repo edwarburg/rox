@@ -1,6 +1,5 @@
 use crate::chunk::{Chunk, Instruction};
 use crate::compiler;
-use crate::compiler::CompileError;
 use crate::value::Value;
 use std::fmt;
 
@@ -16,20 +15,18 @@ struct Stack {
 impl Stack {
     fn new() -> Stack {
         Stack {
-            slots: [Value::Garbage; STACK_MAX],
+            slots: [Value::Nil; STACK_MAX],
             top: 0,
         }
     }
     fn push(&mut self, value: Value) {
         self.slots[self.top] = value;
         self.top += 1;
-        eprintln!("pushed: {:?}, stack: {:?}", value, self);
     }
 
     fn pop(&mut self) -> Value {
         self.top -= 1;
         let popped = self.slots[self.top];
-        eprintln!("popped: {:?}, stack: {:?}", popped, self);
         popped
     }
 }
@@ -49,20 +46,20 @@ pub struct VM<'a> {
 macro_rules! unary_op {
     ( $sel:ident, $op:tt) => {
         match $sel.stack.pop() {
-            Value::Double(d) => $sel.stack.push(Value::Double( $op d)),
-            v => return Err(InterpretError::UnknownValue(v)),
+            Value::Number(d) => $sel.stack.push(Value::Number( $op d)),
+            v => return Err(InterpretError::TypeError($sel.error_msg(format!("Operand must be a number, got {}", v)))),
         }
     }
 }
 
 macro_rules! binary_op {
-    ( $sel:ident, $op:tt) => {
+    ( $sel:ident, $op:tt, $result:ident) => {
         match $sel.stack.pop() {
-            Value::Double(rhs) => match $sel.stack.pop() {
-                Value::Double(lhs) => $sel.stack.push(Value::Double(lhs $op rhs)),
-                v => return Err(InterpretError::UnknownValue(v))
+            Value::Number(rhs) => match $sel.stack.pop() {
+                Value::Number(lhs) => $sel.stack.push(Value::$result(lhs $op rhs)),
+                v => return Err(InterpretError::TypeError($sel.error_msg(format!("Operand must be a number, got {}", v)))),
             },
-            v => return Err(InterpretError::UnknownValue(v)),
+            v => return Err(InterpretError::TypeError($sel.error_msg(format!("Operand must be a number, got {}", v)))),
         }
     }
 }
@@ -82,35 +79,82 @@ impl VM<'_> {
         let num_instructions = instructions.len();
         'interpret: while self.ip < num_instructions {
             let inst = &instructions[self.ip];
-            dbg!(inst);
+
+            let fmt = format!("{}", inst);
+            print!("{:04} {:<8}    ", self.ip, fmt);
+
+            use Instruction::*;
             match inst {
-                Instruction::Return => {
-                    self.stack.pop();
-                    break 'interpret;
+                Return => {
+                    let result = self.stack.pop();
+                    return Ok(result);
                 }
-                Instruction::Constant(index) => {
+                Constant(index) => {
                     let val = &constants[*index as usize];
                     self.stack.push(*val);
                 }
-                Instruction::Negate => unary_op!(self, -),
-                Instruction::Add => binary_op!(self, +),
-                Instruction::Subtract => binary_op!(self, -),
-                Instruction::Multiply => binary_op!(self, *),
-                Instruction::Divide => binary_op!(self, /),
+                Negate => unary_op!(self, -),
+                Add => binary_op!(self, +, Number),
+                Subtract => binary_op!(self, -, Number),
+                Multiply => binary_op!(self, *, Number),
+                Divide => binary_op!(self, /, Number),
+                True => self.stack.push(Value::Boolean(true)),
+                False => self.stack.push(Value::Boolean(false)),
+                Nil => self.stack.push(Value::Nil),
+                Not => {
+                    let top = self.stack.pop();
+                    self.stack.push(Value::Boolean(!VM::coerce_bool(&top)));
+                },
+                Equal => {
+                    let rhs = self.stack.pop();
+                    let lhs = self.stack.pop();
+                    self.stack.push(Value::Boolean(VM::values_equal(&lhs, &rhs)));
+                },
+                Greater => binary_op!(self, >, Boolean),
+                Less => binary_op!(self, <, Boolean),
+
             }
+
+            println!("; stack: {:?}", self.stack);
+
             self.ip += 1;
         }
-        Ok(())
+        Err(InterpretError::NoReturn)
+    }
+
+    fn error_msg(&self, str: String) -> String {
+        format!("error at {}: {}", self.chunk.line_number(self.ip).unwrap_or(&(0 as usize)), str)
+    }
+
+    fn coerce_bool(v: &Value) -> bool {
+        match v {
+            Value::Nil => false,
+            Value::Boolean(b) => *b,
+            _ => true
+        }
+    }
+
+    fn values_equal(lhs: &Value, rhs: &Value) -> bool {
+        use Value::*;
+        match (lhs, rhs) {
+            (Nil, Nil) => true,
+            (Boolean(b1), Boolean(b2)) => b1 == b2,
+            (Number(n1), Number(n2)) => n1 == n2,
+            _ => false
+        }
     }
 }
 
+#[derive(Debug)]
 pub enum InterpretError {
     CompileError(compiler::CompileError),
     UnknownInstruction(usize),
     UnknownValue(Value),
+    TypeError(String),
+    NoReturn
 }
 
-pub type InterpretResult = Result<(), InterpretError>;
+pub type InterpretResult = Result<Value, InterpretError>;
 
 macro_rules! add_constant_instruction {
     ( $chunk:expr, $value:expr, $linenum:expr ) => {{

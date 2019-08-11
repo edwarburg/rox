@@ -57,16 +57,20 @@ impl Chunk {
     pub fn instructions(&self) -> &[Instruction] {
         &self.instructions[..]
     }
+
+    pub fn line_number(&self, i: usize) -> Option<&LineNumber> {
+        self.lines.get(i)
+    }
 }
 
 impl fmt::Display for Chunk {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.instructions.is_empty() {
-            write!(f, "<empty>\n");
+            write!(f, "<empty>\n")?;
             return Ok(());
         }
         for (i, inst) in self.instructions.iter().enumerate() {
-            write!(f, "{:04} {:4}     {}", i, self.lines[i], inst);
+            write!(f, "{:04} {:4}     {}", i, self.lines[i], inst)?;
 
             match inst {
                 Instruction::Constant(index) => {
@@ -74,7 +78,7 @@ impl fmt::Display for Chunk {
                 }
                 _ => {}
             }
-            write!(f, "\n");
+            write!(f, "\n")?;
         }
         Ok(())
     }
@@ -145,20 +149,35 @@ instructions! {
     Add => 1,
     Subtract => 1,
     Multiply => 1,
-    Divide => 1
+    Divide => 1,
+    True => 1,
+    False => 1,
+    Nil => 1,
+    Not => 1,
+    Equal => 1,
+    Greater => 1,
+    Less => 1
 }
 
 impl fmt::Display for Instruction {
     // TODO incorporate into macro?
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use Instruction::*;
         match self {
-            Instruction::Return => write!(f, "RET"),
-            Instruction::Constant(index) => write!(f, "LDC {:4}", *index),
-            Instruction::Negate => write!(f, "NEG"),
-            Instruction::Add => write!(f, "ADD"),
-            Instruction::Subtract => write!(f, "SUB"),
-            Instruction::Multiply => write!(f, "MUL"),
-            Instruction::Divide => write!(f, "DIV"),
+            Return          => write!(f, "RET"),
+            Constant(index) => write!(f, "LDC {:4}", *index),
+            Negate          => write!(f, "NEG"),
+            Add             => write!(f, "ADD"),
+            Subtract        => write!(f, "SUB"),
+            Multiply        => write!(f, "MUL"),
+            Divide          => write!(f, "DIV"),
+            True            => write!(f, "TRU"),
+            False           => write!(f, "FAL"),
+            Nil             => write!(f, "NIL"),
+            Not             => write!(f, "NOT"),
+            Equal           => write!(f, "EQC"),
+            Greater         => write!(f, "GTC"),
+            Less            => write!(f, "LTC"),
         }
     }
 }
@@ -171,7 +190,7 @@ mod tests {
     #[test]
     fn test() {
         let mut chunk = Chunk::new();
-        chunk.add_constant(Value::Double(1.2));
+        chunk.add_constant(Value::Number(1.2));
         chunk.add_instruction(Instruction::Constant(0), 1);
         chunk.add_instruction(Instruction::Return, 1);
         println!("{}", chunk);

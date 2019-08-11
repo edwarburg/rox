@@ -111,11 +111,6 @@ impl<'a> Scanner<'a> {
         self.start.is_empty()
     }
 
-    fn take_and_make(&mut self, chars: usize, ty: TokenType) -> Token {
-        self.take(chars);
-        self.make_token(ty)
-    }
-
     fn take(&mut self, chars: usize) {
         self.curr_len += chars;
     }
@@ -153,10 +148,6 @@ impl<'a> Scanner<'a> {
         F: FnOnce(char) -> bool,
     {
         self.peek_at(i).map_or(false, f)
-    }
-
-    fn unsafe_peek(&self) -> char {
-        self.peek().unwrap()
     }
 
     fn if_accept_then_make(
@@ -224,11 +215,6 @@ impl<'a> Scanner<'a> {
             }
         }
 
-        self.advance_start();
-    }
-
-    fn skip(&mut self, n: usize) {
-        self.take(n);
         self.advance_start();
     }
 
@@ -445,10 +431,6 @@ impl<'a> Parser<'a> {
         self.error_at_current(message);
     }
 
-    fn current_chunk(&self) -> &Chunk {
-        &self.chunk
-    }
-
     fn error_at_current(&mut self, message: String) {
         // TODO avoid clone
         self.error_at(&self.curr.clone(), message);
@@ -460,6 +442,11 @@ impl<'a> Parser<'a> {
 
     fn emit(&mut self, instruction: Instruction) {
         self.chunk.add_instruction(instruction, self.curr.line);
+    }
+
+    fn emit2(&mut self, instruction1: Instruction, instruction2: Instruction) {
+        self.emit(instruction1);
+        self.emit(instruction2);
     }
 
     fn emit_constant(&mut self, value: Value) {
@@ -484,16 +471,26 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // grammar rules
-
     fn number(&mut self) {
         let parsed = self.prev.text.parse::<f64>().expect("number token was not parsable as double");
-        self.emit_constant(Value::Double(parsed));
+        self.emit_constant(Value::Number(parsed));
     }
 
     fn grouping(&mut self) {
         self.expression();
         self.consume(TokenType::RightParen, String::from("Expect ')' after expression"));
+    }
+
+    fn literal(&mut self) {
+        match self.prev.ty {
+            TokenType::True => self.emit(Instruction::True),
+            TokenType::False => self.emit(Instruction::False),
+            TokenType::Nil => self.emit(Instruction::Nil),
+            _ => {
+                // unreachable
+                panic!("parser got confused about literal");
+            }
+        }
     }
 
     fn unary(&mut self) {
@@ -503,6 +500,7 @@ impl<'a> Parser<'a> {
 
         match operator_type {
             TokenType::Minus => self.emit(Instruction::Negate),
+            TokenType::Bang => self.emit(Instruction::Not),
             _ => {
                 // unreachable
                 panic!("parser got confused about a unary expression");
@@ -520,6 +518,12 @@ impl<'a> Parser<'a> {
             TokenType::Minus => self.emit(Instruction::Subtract),
             TokenType::Star => self.emit(Instruction::Multiply),
             TokenType::Slash => self.emit(Instruction::Divide),
+            TokenType::BangEqual => self.emit2(Instruction::Equal, Instruction::Not),
+            TokenType::EqualEqual => self.emit(Instruction::Equal),
+            TokenType::Greater => self.emit(Instruction::Greater),
+            TokenType::GreaterEqual => self.emit2(Instruction::Less, Instruction::Not),
+            TokenType::Less => self.emit(Instruction::Less),
+            TokenType::LessEqual => self.emit2(Instruction::Greater, Instruction::Not),
             _ => panic!("unmatched binary expression")
         }
     }
@@ -529,47 +533,48 @@ impl<'a> Parser<'a> {
     }
 
     fn get_rule(ty: TokenType) -> &'static ParseRule {
+        use TokenType::*;
         match ty {
-            TokenType::LeftParen    => &RULE_LEFT_PAREN,
-            TokenType::RightParen   => &RULE_RIGHT_PAREN,
-            TokenType::LeftBrace    => &RULE_LEFT_BRACE,
-            TokenType::RightBrace   => &RULE_RIGHT_BRACE,
-            TokenType::Comma        => &RULE_COMMA,
-            TokenType::Dot          => &RULE_DOT,
-            TokenType::Minus        => &RULE_MINUS,
-            TokenType::Plus         => &RULE_PLUS,
-            TokenType::Semicolon    => &RULE_SEMICOLON,
-            TokenType::Slash        => &RULE_SLASH,
-            TokenType::Star         => &RULE_STAR,
-            TokenType::Bang         => &RULE_BANG,
-            TokenType::BangEqual    => &RULE_BANG_EQUAL,
-            TokenType::Equal        => &RULE_EQUAL,
-            TokenType::EqualEqual   => &RULE_EQUAL_EQUAL,
-            TokenType::Greater      => &RULE_GREATER,
-            TokenType::GreaterEqual => &RULE_GREATER_EQUAL,
-            TokenType::Less         => &RULE_LESS,
-            TokenType::LessEqual    => &RULE_LESS_EQUAL,
-            TokenType::Identifier   => &RULE_IDENTIFIER,
-            TokenType::String       => &RULE_STRING,
-            TokenType::Number       => &RULE_NUMBER,
-            TokenType::And          => &RULE_AND,
-            TokenType::Class        => &RULE_CLASS,
-            TokenType::Else         => &RULE_ELSE,
-            TokenType::False        => &RULE_FALSE,
-            TokenType::For          => &RULE_FOR,
-            TokenType::Fun          => &RULE_FUN,
-            TokenType::If           => &RULE_IF,
-            TokenType::Nil          => &RULE_NIL,
-            TokenType::Or           => &RULE_OR,
-            TokenType::Print        => &RULE_PRINT,
-            TokenType::Return       => &RULE_RETURN,
-            TokenType::Super        => &RULE_SUPER,
-            TokenType::This         => &RULE_THIS,
-            TokenType::True         => &RULE_TRUE,
-            TokenType::Var          => &RULE_VAR,
-            TokenType::While        => &RULE_WHILE,
-            TokenType::Error        => &RULE_ERROR,
-            TokenType::Eof          => &RULE_EOF,
+            LeftParen    => &RULE_LEFT_PAREN,
+            RightParen   => &RULE_RIGHT_PAREN,
+            LeftBrace    => &RULE_LEFT_BRACE,
+            RightBrace   => &RULE_RIGHT_BRACE,
+            Comma        => &RULE_COMMA,
+            Dot          => &RULE_DOT,
+            Minus        => &RULE_MINUS,
+            Plus         => &RULE_PLUS,
+            Semicolon    => &RULE_SEMICOLON,
+            Slash        => &RULE_SLASH,
+            Star         => &RULE_STAR,
+            Bang         => &RULE_BANG,
+            BangEqual    => &RULE_BANG_EQUAL,
+            Equal        => &RULE_EQUAL,
+            EqualEqual   => &RULE_EQUAL_EQUAL,
+            Greater      => &RULE_GREATER,
+            GreaterEqual => &RULE_GREATER_EQUAL,
+            Less         => &RULE_LESS,
+            LessEqual    => &RULE_LESS_EQUAL,
+            Identifier   => &RULE_IDENTIFIER,
+            String       => &RULE_STRING,
+            Number       => &RULE_NUMBER,
+            And          => &RULE_AND,
+            Class        => &RULE_CLASS,
+            Else         => &RULE_ELSE,
+            False        => &RULE_FALSE,
+            For          => &RULE_FOR,
+            Fun          => &RULE_FUN,
+            If           => &RULE_IF,
+            Nil          => &RULE_NIL,
+            Or           => &RULE_OR,
+            Print        => &RULE_PRINT,
+            Return       => &RULE_RETURN,
+            Super        => &RULE_SUPER,
+            This         => &RULE_THIS,
+            True         => &RULE_TRUE,
+            Var          => &RULE_VAR,
+            While        => &RULE_WHILE,
+            Error        => &RULE_ERROR,
+            Eof          => &RULE_EOF,
         }
     }
 }
@@ -608,6 +613,7 @@ struct ParseRule {
 static FAIL: ParseFn = |p| { p.error_at(&p.prev.clone(), String::from("Expected expression")); };
 // TODO how to make these just a reference to the method, eg, `Parser::grouping`, rather than a lambda over it?
 static GROUPING: ParseFn = |p| p.grouping();
+static LITERAL: ParseFn = |p| p.literal();
 static UNARY: ParseFn = |p| p.unary();
 static BINARY: ParseFn = |p| p.binary();
 static NUMBER: ParseFn = |p| p.number();
@@ -623,31 +629,31 @@ static RULE_PLUS: ParseRule          = ParseRule { prefix: FAIL,     infix: BINA
 static RULE_SEMICOLON: ParseRule     = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_SLASH: ParseRule         = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Factor };
 static RULE_STAR: ParseRule          = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Factor };
-static RULE_BANG: ParseRule          = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
-static RULE_BANG_EQUAL: ParseRule    = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
+static RULE_BANG: ParseRule          = ParseRule { prefix: UNARY,    infix: FAIL,   precedence: Precedence::None };
+static RULE_BANG_EQUAL: ParseRule    = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Equality };
 static RULE_EQUAL: ParseRule         = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
-static RULE_EQUAL_EQUAL: ParseRule   = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
-static RULE_GREATER: ParseRule       = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
-static RULE_GREATER_EQUAL: ParseRule = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
-static RULE_LESS: ParseRule          = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
-static RULE_LESS_EQUAL: ParseRule    = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
+static RULE_EQUAL_EQUAL: ParseRule   = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Equality};
+static RULE_GREATER: ParseRule       = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Comparison };
+static RULE_GREATER_EQUAL: ParseRule = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Comparison };
+static RULE_LESS: ParseRule          = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Comparison };
+static RULE_LESS_EQUAL: ParseRule    = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Comparison };
 static RULE_IDENTIFIER: ParseRule    = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_STRING: ParseRule        = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_NUMBER: ParseRule        = ParseRule { prefix: NUMBER,   infix: FAIL,   precedence: Precedence::None };
 static RULE_AND: ParseRule           = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_CLASS: ParseRule         = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_ELSE: ParseRule          = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
-static RULE_FALSE: ParseRule         = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
+static RULE_FALSE: ParseRule         = ParseRule { prefix: LITERAL,  infix: FAIL,   precedence: Precedence::None };
 static RULE_FOR: ParseRule           = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_FUN: ParseRule           = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_IF: ParseRule            = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
-static RULE_NIL: ParseRule           = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
+static RULE_NIL: ParseRule           = ParseRule { prefix: LITERAL,  infix: FAIL,   precedence: Precedence::None };
 static RULE_OR: ParseRule            = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_PRINT: ParseRule         = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_RETURN: ParseRule        = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_SUPER: ParseRule         = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_THIS: ParseRule          = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
-static RULE_TRUE: ParseRule          = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
+static RULE_TRUE: ParseRule          = ParseRule { prefix: LITERAL,  infix: FAIL,   precedence: Precedence::None };
 static RULE_VAR: ParseRule           = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_WHILE: ParseRule         = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_ERROR: ParseRule         = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };

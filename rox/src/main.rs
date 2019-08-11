@@ -30,7 +30,10 @@ fn repl() {
                 if buffer.trim() == "quit" {
                     break 'repl;
                 }
-                interpret(&buffer);
+                match interpret(&buffer) {
+                    Ok(v) => println!("==> {}", v),
+                    Err(e) => println!("error: {:?}", e)
+                }
             }
             Err(e) => panic!("error reading line: {}", e),
         }
