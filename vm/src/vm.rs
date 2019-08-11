@@ -110,12 +110,6 @@ pub enum InterpretError {
     UnknownValue(Value),
 }
 
-impl Into<InterpretError> for CompileError {
-    fn into(self) -> InterpretError {
-        InterpretError::CompileError(self)
-    }
-}
-
 pub type InterpretResult = Result<(), InterpretError>;
 
 macro_rules! add_constant_instruction {
