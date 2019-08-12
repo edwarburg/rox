@@ -42,7 +42,7 @@ fn repl() {
 }
 
 fn interpret(line: &str) -> vm::vm::InterpretResult {
-    println!("{}", line);
+    println!("interpreting {}", line);
     let chunk = vm::compiler::compile(line)?;
     let mut vm = vm::vm::VM::new(&chunk);
     return vm.run();

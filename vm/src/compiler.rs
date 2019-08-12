@@ -2,7 +2,7 @@ use crate::chunk::{Chunk, LineNumber, Instruction, ChunkError};
 use std::borrow::Cow;
 use std::fmt;
 use std::ops::Deref;
-use crate::value::Value;
+use crate::value::{Value};
 use crate::vm::InterpretError;
 
 #[derive(Debug)]
@@ -219,11 +219,12 @@ impl<'a> Scanner<'a> {
     }
 
     fn make_string(&mut self) -> Token<'a> {
+        // skip beginning '"'
+        self.advance_start();
         let mut terminated = false;
         while let Some(c) = self.peek() {
             if c == '"' {
                 terminated = true;
-                self.take(1);
                 break;
             }
             if c == '\n' {
@@ -236,7 +237,11 @@ impl<'a> Scanner<'a> {
             return self.error_token("Unterminated string literal");
         }
 
-        self.make_token(TokenType::String)
+        let result = self.make_token(TokenType::String);
+        // skip closing '"'
+        self.take(1);
+        self.advance_start();
+        result
     }
 
     fn make_number(&mut self) -> Token<'a> {
@@ -476,6 +481,12 @@ impl<'a> Parser<'a> {
         self.emit_constant(Value::Number(parsed));
     }
 
+    fn string(&mut self) {
+        let string = String::from(self.prev.text.deref());
+        let loxstr = crate::value::allocate_string(string);
+        self.emit_constant(Value::Object(loxstr))
+    }
+
     fn grouping(&mut self) {
         self.expression();
         self.consume(TokenType::RightParen, String::from("Expect ')' after expression"));
@@ -617,6 +628,7 @@ static LITERAL: ParseFn = |p| p.literal();
 static UNARY: ParseFn = |p| p.unary();
 static BINARY: ParseFn = |p| p.binary();
 static NUMBER: ParseFn = |p| p.number();
+static STRING: ParseFn = |p| p.string();
 
 static RULE_LEFT_PAREN: ParseRule    = ParseRule { prefix: GROUPING, infix: FAIL,   precedence: Precedence::None };
 static RULE_RIGHT_PAREN: ParseRule   = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
@@ -638,7 +650,7 @@ static RULE_GREATER_EQUAL: ParseRule = ParseRule { prefix: FAIL,     infix: BINA
 static RULE_LESS: ParseRule          = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Comparison };
 static RULE_LESS_EQUAL: ParseRule    = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Comparison };
 static RULE_IDENTIFIER: ParseRule    = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
-static RULE_STRING: ParseRule        = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
+static RULE_STRING: ParseRule        = ParseRule { prefix: STRING,     infix: FAIL,   precedence: Precedence::None };
 static RULE_NUMBER: ParseRule        = ParseRule { prefix: NUMBER,   infix: FAIL,   precedence: Precedence::None };
 static RULE_AND: ParseRule           = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_CLASS: ParseRule         = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
