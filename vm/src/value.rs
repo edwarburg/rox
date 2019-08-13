@@ -4,6 +4,7 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use crate::context::LoxContext;
+use std::ops::Deref;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -21,7 +22,12 @@ impl fmt::Display for Value {
             Value::Nil => write!(f, "nil"),
             Value::Number(d) => write!(f, "{}", d),
             Value::Boolean(b) => write!(f, "{}", b),
-            Value::Object(o) => write!(f, "{:?}", o)
+            Value::Object(o) => {
+                match o.deref() {
+                    Obj::String { value, .. } => write!(f, "\"{}\"", value),
+                    _ => write!(f, "{:?}", o)
+                }
+            }
         }
     }
 }

@@ -31,7 +31,8 @@ fn repl() {
                     break 'repl;
                 }
                 match interpret(&buffer) {
-                    Ok(v) => println!("==> {}", v),
+                    Ok(_) => {}
+                    // TODO figure out why an error seems to mess up reading in the next line
                     Err(e) => println!("error: {:?}", e)
                 }
             }

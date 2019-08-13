@@ -11,3 +11,5 @@ pub mod compiler;
 pub mod value;
 pub mod vm;
 pub mod context;
+
+pub(crate) const DEBUG: bool = true;

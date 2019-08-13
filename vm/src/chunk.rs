@@ -156,7 +156,8 @@ instructions! {
     Not => 1,
     Equal => 1,
     Greater => 1,
-    Less => 1
+    Less => 1,
+    Print => 1
 }
 
 impl fmt::Display for Instruction {
@@ -178,6 +179,7 @@ impl fmt::Display for Instruction {
             Equal           => write!(f, "EQC"),
             Greater         => write!(f, "GTC"),
             Less            => write!(f, "LTC"),
+            Print           => write!(f, "PRT")
         }
     }
 }

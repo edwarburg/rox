@@ -1,5 +1,5 @@
 use crate::chunk::{Chunk, Instruction};
-use crate::compiler;
+use crate::{compiler, DEBUG};
 use crate::value::{Value, allocate_string};
 use crate::context::LoxContext;
 use std::borrow::Borrow;
@@ -66,6 +66,7 @@ pub enum InterpretError {
     PoppedEmptyStack
 }
 
+
 impl VM<'_> {
     pub fn new<'a>(chunk: &'a Chunk, context: &'a mut LoxContext) -> VM<'a> {
         VM {
@@ -80,19 +81,22 @@ impl VM<'_> {
         let constants = self.chunk.constants();
         let instructions = self.chunk.instructions();
         let num_instructions = instructions.len();
-        defer!(print!("\n\n"));
+        defer!(if DEBUG {
+            print!("\n\n")
+        });
 
         'interpret: while self.ip < num_instructions {
             let inst = &instructions[self.ip];
 
             let fmt = format!("{}", inst);
-            print!("{:04} {:<8}    ", self.ip, fmt);
+            if DEBUG {
+                print!("{:04} {:<8}    ", self.ip, fmt);
+            }
 
             use Instruction::*;
             match inst {
                 Return => {
-                    let result = self.stack.pop()?;
-                    return Ok(result);
+                    return Ok(());
                 }
                 Constant(index) => {
                     let val = &constants[*index as usize];
@@ -128,10 +132,19 @@ impl VM<'_> {
                 },
                 Greater => binary_op!(self, >, Boolean),
                 Less => binary_op!(self, <, Boolean),
+                Print => {
+                    let to_print = self.stack.pop()?;
+                    if DEBUG {
+                        print!("\nstout ==> ");
+                    }
+                    println!("{}", &to_print);
 
+                }
             }
 
-            println!("; stack: {:?}", self.stack);
+            if DEBUG {
+                println!("; stack: {:?}", self.stack);
+            }
 
             self.ip += 1;
         }
@@ -166,7 +179,7 @@ impl VM<'_> {
     }
 }
 
-pub type InterpretResult = Result<Value, InterpretError>;
+pub type InterpretResult = Result<(), InterpretError>;
 
 macro_rules! add_constant_instruction {
     ( $chunk:expr, $value:expr, $linenum:expr ) => {{
@@ -182,6 +195,7 @@ mod tests {
     use crate::chunk::{Chunk, Instruction};
     use crate::value::Value;
     use crate::vm::VM;
+    use crate::context::LoxContext;
 
     #[test]
     fn test() {
@@ -193,7 +207,8 @@ mod tests {
         chunk.add_instruction(Instruction::Divide, 123);
         chunk.add_instruction(Instruction::Return, 123);
         dbg!(&chunk);
-        let mut vm = VM::new(&chunk);
+        let mut context = LoxContext::new();
+        let mut vm = VM::new(&chunk, &mut context);
         vm.run();
     }
 }

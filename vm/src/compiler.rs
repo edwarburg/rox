@@ -5,6 +5,7 @@ use std::ops::Deref;
 use crate::value::{Value};
 use crate::vm::InterpretError;
 use crate::context::LoxContext;
+use crate::DEBUG;
 
 #[derive(Debug)]
 pub enum CompileError {
@@ -33,7 +34,6 @@ impl From<CompileError> for InterpretError {
     }
 }
 
-const DEBUG: bool = true;
 
 pub fn compile(input: &str, context: &mut LoxContext) -> Result<Chunk, CompileError> {
     let mut scanner = Scanner::new(input);
@@ -404,8 +404,10 @@ impl<'a> Parser<'a> {
 
     fn parse(mut self) -> Result<Chunk, CompileError> {
         self.advance();
-        self.expression();
-        self.consume(TokenType::Eof, String::from("Expected end of expression."));
+
+        while !self.maybe_consume(TokenType::Eof) {
+            self.declaration();
+        }
 
         self.end_compiler();
 
@@ -439,6 +441,15 @@ impl<'a> Parser<'a> {
         self.error_at_current(message);
     }
 
+    fn maybe_consume(&mut self, ty: TokenType) -> bool {
+        if self.curr.ty == ty {
+            self.advance();
+            return true;
+        }
+
+        false
+    }
+
     fn error_at_current(&mut self, message: String) {
         // TODO avoid clone
         self.error_at(&self.curr.clone(), message);
@@ -465,6 +476,24 @@ impl<'a> Parser<'a> {
 
     fn end_compiler(&mut self) {
         self.emit(Instruction::Return)
+    }
+
+    // grammar rules
+
+    fn declaration(&mut self) {
+        self.statement();
+    }
+
+    fn statement(&mut self) {
+        if self.maybe_consume(TokenType::Print) {
+            self.print_statement();
+        }
+    }
+
+    fn print_statement(&mut self) {
+        self.expression();
+        self.consume(TokenType::Semicolon, "Expected ';' after value.".to_owned());
+        self.emit(Instruction::Print);
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) {
@@ -653,7 +682,7 @@ static RULE_GREATER_EQUAL: ParseRule = ParseRule { prefix: FAIL,     infix: BINA
 static RULE_LESS: ParseRule          = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Comparison };
 static RULE_LESS_EQUAL: ParseRule    = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Comparison };
 static RULE_IDENTIFIER: ParseRule    = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
-static RULE_STRING: ParseRule        = ParseRule { prefix: STRING,     infix: FAIL,   precedence: Precedence::None };
+static RULE_STRING: ParseRule        = ParseRule { prefix: STRING,   infix: FAIL,   precedence: Precedence::None };
 static RULE_NUMBER: ParseRule        = ParseRule { prefix: NUMBER,   infix: FAIL,   precedence: Precedence::None };
 static RULE_AND: ParseRule           = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_CLASS: ParseRule         = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
@@ -677,10 +706,12 @@ static RULE_EOF: ParseRule           = ParseRule { prefix: FAIL,     infix: FAIL
 #[cfg(test)]
 mod tests {
     use crate::compiler::{compile, Scanner, TokenType};
+    use crate::context::LoxContext;
 
     #[test]
     fn compile_test() {
-        let chunk = compile("(123 + 456) * -789");
+        let mut context = LoxContext::new();
+        let chunk = compile("(123 + 456) * -789", &mut context);
         print!("{:?}", chunk);
     }
 
