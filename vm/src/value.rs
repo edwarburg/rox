@@ -1,16 +1,19 @@
 use std::fmt;
 use std::fmt::{Display};
 use std::rc::Rc;
+use std::collections::HashMap;
+use std::sync::Mutex;
+use crate::context::LoxContext;
 
 #[derive(Debug, Clone)]
 pub enum Value {
     Nil,
     Number(f64),
     Boolean(bool),
-    Object(ObjRef<Obj>)
+    Object(ObjRef)
 }
 
-type ObjRef<T> = Rc<T>;
+pub(crate) type ObjRef = Rc<Obj>;
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -73,11 +76,11 @@ impl Value {
 
 }
 
-pub fn allocate_string(value: String) -> ObjRef<Obj> {
-    Rc::new(Obj::String {
+pub fn allocate_string(value: &str, context: &mut LoxContext) -> ObjRef {
+    context.strings.intern(value.to_owned(), || Rc::new(Obj::String {
         header: ObjHeader::new(),
-        value
-    })
+        value: value.to_owned()
+    }))
 }
 
 #[derive(Debug, Copy, Clone)]

@@ -1,6 +1,8 @@
 use crate::chunk::{Chunk, Instruction};
 use crate::compiler;
 use crate::value::{Value, allocate_string};
+use crate::context::LoxContext;
+use std::borrow::Borrow;
 
 // TODO move to lib.rs? otherwise stuff in here is `vm::vm::Thing`
 
@@ -28,6 +30,7 @@ impl Stack {
 
 pub struct VM<'a> {
     chunk: &'a Chunk,
+    context: &'a mut LoxContext,
     ip: usize,
     stack: Stack,
 }
@@ -64,9 +67,10 @@ pub enum InterpretError {
 }
 
 impl VM<'_> {
-    pub fn new(chunk: &Chunk) -> VM {
+    pub fn new<'a>(chunk: &'a Chunk, context: &'a mut LoxContext) -> VM<'a> {
         VM {
             chunk,
+            context,
             ip: 0,
             stack: Stack::new(),
         }
@@ -101,7 +105,7 @@ impl VM<'_> {
                     let result = match (&lhs, &rhs) {
                         (Value::Number(n1), Value::Number(n2)) => Value::Number(n1 + n2),
                         (lhs @ Value::Object(_), rhs @ Value::Object(_)) if lhs.is_string() && rhs.is_string() => {
-                            Value::Object(allocate_string([lhs.as_string(), rhs.as_string()].concat()))
+                            Value::Object(allocate_string([lhs.as_string(), rhs.as_string()].concat().borrow(), self.context))
                         }
                         _ => return Err(InterpretError::TypeError(format!("Cannot add {} and {} because they are the wrong type(s)", lhs, rhs)))
                     };

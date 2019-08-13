@@ -43,8 +43,9 @@ fn repl() {
 
 fn interpret(line: &str) -> vm::vm::InterpretResult {
     println!("interpreting {}", line);
-    let chunk = vm::compiler::compile(line)?;
-    let mut vm = vm::vm::VM::new(&chunk);
+    let mut context = vm::context::LoxContext::new();
+    let chunk = vm::compiler::compile(line, &mut context)?;
+    let mut vm = vm::vm::VM::new(&chunk, &mut context);
     return vm.run();
 }
 

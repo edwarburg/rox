@@ -1,9 +1,10 @@
 use crate::chunk::{Chunk, LineNumber, Instruction, ChunkError};
-use std::borrow::Cow;
+use std::borrow::{Cow, Borrow};
 use std::fmt;
 use std::ops::Deref;
 use crate::value::{Value};
 use crate::vm::InterpretError;
+use crate::context::LoxContext;
 
 #[derive(Debug)]
 pub enum CompileError {
@@ -34,9 +35,9 @@ impl From<CompileError> for InterpretError {
 
 const DEBUG: bool = true;
 
-pub fn compile(input: &str) -> Result<Chunk, CompileError> {
+pub fn compile(input: &str, context: &mut LoxContext) -> Result<Chunk, CompileError> {
     let mut scanner = Scanner::new(input);
-    let parser = Parser::new(&mut scanner);
+    let parser = Parser::new(&mut scanner, context);
     let result = parser.parse();
     if DEBUG {
         result.as_ref().map(|chunk| println!("{:?}", chunk));
@@ -378,13 +379,14 @@ impl fmt::Display for TokenType {
 struct Parser<'a> {
     chunk: Chunk,
     scanner: &'a mut Scanner<'a>,
+    context: &'a mut LoxContext,
     curr: Token<'a>,
     prev: Token<'a>,
     errors: Vec<CompileError>
 }
 
 impl<'a> Parser<'a> {
-    fn new(scanner: &'a mut Scanner<'a>) -> Parser<'a> {
+    fn new(scanner: &'a mut Scanner<'a>, context: &'a mut LoxContext) -> Parser<'a> {
         let initial_token = Token {
             ty: TokenType::Error,
             text: Cow::Borrowed("nothing scanned yet"),
@@ -393,6 +395,7 @@ impl<'a> Parser<'a> {
         Parser {
             chunk: Chunk::new(),
             scanner,
+            context,
             curr: initial_token.clone(),
             prev: initial_token.clone(),
             errors: Vec::new()
@@ -483,7 +486,7 @@ impl<'a> Parser<'a> {
 
     fn string(&mut self) {
         let string = String::from(self.prev.text.deref());
-        let loxstr = crate::value::allocate_string(string);
+        let loxstr = crate::value::allocate_string(string.borrow(), self.context);
         self.emit_constant(Value::Object(loxstr))
     }
 
