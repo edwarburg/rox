@@ -382,6 +382,7 @@ struct Parser<'a> {
     context: &'a mut LoxContext,
     curr: Token<'a>,
     prev: Token<'a>,
+    panic_mode: bool,
     errors: Vec<CompileError>
 }
 
@@ -398,6 +399,7 @@ impl<'a> Parser<'a> {
             context,
             curr: initial_token.clone(),
             prev: initial_token.clone(),
+            panic_mode: false,
             errors: Vec::new()
         }
     }
@@ -456,7 +458,9 @@ impl<'a> Parser<'a> {
     }
 
     fn error_at(&mut self, token: &Token, message: String) {
-        self.errors.push(CompileError::Error(format!("[line {}] Error at {}: {}", token.line, if token.ty == TokenType::Eof { "end" } else { &*token.text }, message)));
+        if !self.panic_mode {
+            self.errors.push(CompileError::Error(format!("[line {}] Error at {}: {}", token.line, if token.ty == TokenType::Eof { "end" } else { &*token.text }, message)));
+        }
     }
 
     fn emit(&mut self, instruction: Instruction) {
@@ -482,11 +486,34 @@ impl<'a> Parser<'a> {
 
     fn declaration(&mut self) {
         self.statement();
+        if self.panic_mode {
+            self.synchronize();
+        }
+    }
+
+    fn synchronize(&mut self) {
+        self.panic_mode = false;
+
+        use crate::compiler::TokenType::*;
+        while self.curr.ty != Eof {
+            if self.prev.ty == Semicolon {
+                return;
+            }
+
+
+            match self.curr.ty {
+                Class | Fun | Var | For | If | While | Print | Return => return,
+                _ => {}
+            }
+            self.advance();
+        }
     }
 
     fn statement(&mut self) {
         if self.maybe_consume(TokenType::Print) {
             self.print_statement();
+        } else {
+            self.expression_statement();
         }
     }
 
@@ -494,6 +521,12 @@ impl<'a> Parser<'a> {
         self.expression();
         self.consume(TokenType::Semicolon, "Expected ';' after value.".to_owned());
         self.emit(Instruction::Print);
+    }
+
+    fn expression_statement(&mut self) {
+        self.expression();
+        self.consume(TokenType::Semicolon, "Expected ';' after expression.".to_owned());
+        self.emit(Instruction::Pop);
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) {

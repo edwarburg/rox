@@ -13,24 +13,24 @@ fn main() {
 }
 
 macro_rules! print_and_flush {
-    ( $( $x:expr),* ) => {
-        print!($($x)*);
+    ( $( $x:expr ),* ) => {{
+        print!($($x),*);
         io::Write::flush(&mut io::stdout()).unwrap();
-    }
+    }}
 }
 
 // TODO bubble errors up more gracefully
 
 fn repl() {
-    let mut buffer: String = String::new();
     'repl: loop {
         print_and_flush!("> ");
-        match io::stdin().read_line(&mut buffer) {
+        let mut line: String = String::new();
+        match io::stdin().read_line(&mut line) {
             Ok(_) => {
-                if buffer.trim() == "quit" {
+                if line.trim() == "quit" {
                     break 'repl;
                 }
-                match interpret(&buffer) {
+                match interpret(&line) {
                     Ok(_) => {}
                     // TODO figure out why an error seems to mess up reading in the next line
                     Err(e) => println!("error: {:?}", e)
@@ -38,7 +38,6 @@ fn repl() {
             }
             Err(e) => panic!("error reading line: {}", e),
         }
-        buffer.clear();
     }
 }
 

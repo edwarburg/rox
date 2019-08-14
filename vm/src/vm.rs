@@ -139,6 +139,9 @@ impl VM<'_> {
                     }
                     println!("{}", &to_print);
 
+                },
+                Pop => {
+                    self.stack.pop()?;
                 }
             }
 
