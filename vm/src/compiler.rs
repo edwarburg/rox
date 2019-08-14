@@ -1,8 +1,8 @@
-use crate::chunk::{Chunk, LineNumber, Instruction, ChunkError};
+use crate::chunk::{Chunk, LineNumber, Instruction, ChunkError, ConstantPoolIndex, MAX_CONSTANTS};
 use std::borrow::{Cow, Borrow};
 use std::fmt;
 use std::ops::Deref;
-use crate::value::{Value};
+use crate::value::{Value, allocate_string};
 use crate::vm::InterpretError;
 use crate::context::LoxContext;
 use crate::DEBUG;
@@ -458,8 +458,13 @@ impl<'a> Parser<'a> {
     }
 
     fn error_at(&mut self, token: &Token, message: String) {
+        self.push_error(CompileError::Error(format!("[line {}] Error at {}: {}", token.line, if token.ty == TokenType::Eof { "end" } else { &*token.text }, message)));
+    }
+
+    fn push_error(&mut self, error: CompileError) {
         if !self.panic_mode {
-            self.errors.push(CompileError::Error(format!("[line {}] Error at {}: {}", token.line, if token.ty == TokenType::Eof { "end" } else { &*token.text }, message)));
+            self.panic_mode = true;
+            self.errors.push(error);
         }
     }
 
@@ -472,10 +477,11 @@ impl<'a> Parser<'a> {
         self.emit(instruction2);
     }
 
-    fn emit_constant(&mut self, value: Value) {
+    fn emit_constant(&mut self, value: Value) -> ConstantPoolIndex {
         self.chunk.add_constant(value)
-            .map(|offset| self.emit(Instruction::Constant(offset)))
-            .map_err(|e| self.errors.push(e.into()));
+            .map(|offset| { self.emit(Instruction::Constant(offset)); offset })
+            .map_err(|e| self.push_error(e.into()))
+            .unwrap_or(0 as ConstantPoolIndex)
     }
 
     fn end_compiler(&mut self) {
@@ -485,7 +491,12 @@ impl<'a> Parser<'a> {
     // grammar rules
 
     fn declaration(&mut self) {
-        self.statement();
+        if self.maybe_consume(TokenType::Var) {
+            self.var_declaration()
+        } else {
+            self.statement();
+        }
+
         if self.panic_mode {
             self.synchronize();
         }
@@ -507,6 +518,36 @@ impl<'a> Parser<'a> {
             }
             self.advance();
         }
+    }
+
+    fn var_declaration(&mut self) {
+        let variable_name_index = self.parse_variable("Expect variable name.".to_owned());
+        if self.maybe_consume(TokenType::Equal) {
+            self.expression();
+        } else {
+            self.emit(Instruction::Nil);
+        }
+
+        self.consume(TokenType::Semicolon, "Expect ';' after variable declaration.".to_owned());
+        self.declare_variable(variable_name_index);
+    }
+
+    fn parse_variable(&mut self, error_msg: String) -> ConstantPoolIndex {
+        self.consume(TokenType::Identifier, error_msg);
+        let cow = self.prev.text.clone();
+        let var_name = cow.deref();
+        self.identifier_constant(var_name)
+    }
+
+    fn identifier_constant(&mut self, str: &str) -> ConstantPoolIndex {
+        let obj_ref = allocate_string(str, self.context);
+        self.chunk.add_constant(Value::Object(obj_ref))
+            .map_err(|e| self.push_error(e.into()))
+            .unwrap_or(MAX_CONSTANTS as ConstantPoolIndex)
+    }
+
+    fn declare_variable(&mut self, index: ConstantPoolIndex) {
+        self.emit(Instruction::DefineGlobal(index));
     }
 
     fn statement(&mut self) {
@@ -549,7 +590,7 @@ impl<'a> Parser<'a> {
     fn string(&mut self) {
         let string = String::from(self.prev.text.deref());
         let loxstr = crate::value::allocate_string(string.borrow(), self.context);
-        self.emit_constant(Value::Object(loxstr))
+        self.emit_constant(Value::Object(loxstr));
     }
 
     fn grouping(&mut self) {

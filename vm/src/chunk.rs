@@ -4,7 +4,7 @@ use crate::value::Value;
 use std::error::Error;
 
 pub type ConstantPoolIndex = u8;
-pub const MAX_CONSTANTS: usize = std::u8::MAX as usize;
+pub const MAX_CONSTANTS: ConstantPoolIndex = std::u8::MAX as ConstantPoolIndex;
 pub type LineNumber = usize;
 
 pub struct Chunk {
@@ -36,7 +36,7 @@ impl Chunk {
     }
 
     pub fn add_constant(&mut self, constant: Value) -> Result<ConstantPoolIndex, ChunkError> {
-        if self.constant_pool.len() >= MAX_CONSTANTS {
+        if self.constant_pool.len() as ConstantPoolIndex >= MAX_CONSTANTS {
             return Err(ChunkError::ConstantPoolOverflow);
         }
 
@@ -74,13 +74,21 @@ impl fmt::Display for Chunk {
 
             match inst {
                 Instruction::Constant(index) => {
-                    write!(f, "    ; value: {}", self.constant_pool[*index as usize])?
+                    self.write_constant(f, index)?
+                }
+                Instruction::DefineGlobal(index) => {
+                    self.write_constant(f, index)?
                 }
                 _ => {}
             }
             write!(f, "\n")?;
         }
         Ok(())
+    }
+}
+impl Chunk {
+    fn write_constant(&self, f: &mut fmt::Formatter, index: &u8) -> fmt::Result {
+        write!(f, "    ; value: {}", self.constant_pool[*index as usize])
     }
 }
 
@@ -158,7 +166,8 @@ instructions! {
     Greater => 1,
     Less => 1,
     Print => 1,
-    Pop => 1
+    Pop => 1,
+    DefineGlobal(ConstantPoolIndex) => 2
 }
 
 impl fmt::Display for Instruction {
@@ -167,7 +176,7 @@ impl fmt::Display for Instruction {
         use Instruction::*;
         match self {
             Return          => write!(f, "RET"),
-            Constant(index) => write!(f, "LDC {:4}", *index),
+            Constant(index)      => write!(f, "LDC {:4}", *index),
             Negate          => write!(f, "NEG"),
             Add             => write!(f, "ADD"),
             Subtract        => write!(f, "SUB"),
@@ -182,6 +191,7 @@ impl fmt::Display for Instruction {
             Less            => write!(f, "LTC"),
             Print           => write!(f, "PRT"),
             Pop             => write!(f, "POP"),
+            DefineGlobal(index)    => write!(f, "GLB {:4}", *index)
         }
     }
 }

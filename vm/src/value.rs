@@ -1,8 +1,6 @@
 use std::fmt;
 use std::fmt::{Display};
 use std::rc::Rc;
-use std::collections::HashMap;
-use std::sync::Mutex;
 use crate::context::LoxContext;
 use std::ops::Deref;
 
@@ -14,6 +12,7 @@ pub enum Value {
     Object(ObjRef)
 }
 
+// TODO make this a proper type instead of a type alias
 pub(crate) type ObjRef = Rc<Obj>;
 
 impl fmt::Display for Value {

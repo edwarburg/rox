@@ -1,8 +1,9 @@
-use crate::chunk::{Chunk, Instruction};
+use crate::chunk::{Chunk, Instruction, ConstantPoolIndex};
 use crate::{compiler, DEBUG};
-use crate::value::{Value, allocate_string};
+use crate::value::{Value, allocate_string, ObjRef};
 use crate::context::LoxContext;
 use std::borrow::Borrow;
+use std::collections::HashMap;
 
 // TODO move to lib.rs? otherwise stuff in here is `vm::vm::Thing`
 
@@ -20,6 +21,9 @@ impl Stack {
         }
     }
     fn push(&mut self, value: Value) {
+        if self.slots.len() > STACK_MAX {
+            panic!("stack overflow");
+        }
         self.slots.push(value);
     }
 
@@ -33,6 +37,7 @@ pub struct VM<'a> {
     context: &'a mut LoxContext,
     ip: usize,
     stack: Stack,
+    globals: HashMap<String, Value>
 }
 
 macro_rules! unary_op {
@@ -74,6 +79,7 @@ impl VM<'_> {
             context,
             ip: 0,
             stack: Stack::new(),
+            globals: HashMap::new()
         }
     }
 
@@ -99,7 +105,7 @@ impl VM<'_> {
                     return Ok(());
                 }
                 Constant(index) => {
-                    let val = &constants[*index as usize];
+                    let val = self.read_constant(*index);
                     self.stack.push(val.clone());
                 }
                 Negate => unary_op!(self, -),
@@ -142,6 +148,10 @@ impl VM<'_> {
                 },
                 Pop => {
                     self.stack.pop()?;
+                },
+                DefineGlobal(index) => {
+                    let var_name = self.read_constant(*index).as_string().to_owned();
+                    self.globals.insert(var_name, self.stack.pop()?);
                 }
             }
 
@@ -152,6 +162,10 @@ impl VM<'_> {
             self.ip += 1;
         }
         Err(InterpretError::NoReturn)
+    }
+
+    fn read_constant(&self, index: ConstantPoolIndex) -> &Value {
+        &self.chunk.constants()[index as usize]
     }
 
     fn error_msg(&self, str: String) -> String {

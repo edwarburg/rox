@@ -3,8 +3,6 @@ extern crate num;
 extern crate num_derive;
 #[macro_use]
 extern crate scopeguard;
-#[macro_use]
-extern crate lazy_static;
 
 pub mod chunk;
 pub mod compiler;
