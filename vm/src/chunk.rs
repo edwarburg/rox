@@ -74,10 +74,13 @@ impl fmt::Display for Chunk {
 
             match inst {
                 Instruction::Constant(index) => {
-                    self.write_constant(f, index)?
+                    self.write_constant(f, "value", index)?
                 }
                 Instruction::DefineGlobal(index) => {
-                    self.write_constant(f, index)?
+                    self.write_constant(f, "variable", index)?
+                },
+                Instruction::GetGlobal(index) => {
+                    self.write_constant(f, "variable", index)?
                 }
                 _ => {}
             }
@@ -87,8 +90,8 @@ impl fmt::Display for Chunk {
     }
 }
 impl Chunk {
-    fn write_constant(&self, f: &mut fmt::Formatter, index: &u8) -> fmt::Result {
-        write!(f, "    ; value: {}", self.constant_pool[*index as usize])
+    fn write_constant(&self, f: &mut fmt::Formatter, label: &str, index: &u8) -> fmt::Result {
+        write!(f, "    ; {}: {}", label, self.constant_pool[*index as usize])
     }
 }
 
@@ -167,7 +170,9 @@ instructions! {
     Less => 1,
     Print => 1,
     Pop => 1,
-    DefineGlobal(ConstantPoolIndex) => 2
+    DefineGlobal(ConstantPoolIndex) => 2,
+    GetGlobal(ConstantPoolIndex) => 2,
+    SetGlobal(ConstantPoolIndex) => 2
 }
 
 impl fmt::Display for Instruction {
@@ -175,23 +180,25 @@ impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Instruction::*;
         match self {
-            Return          => write!(f, "RET"),
-            Constant(index)      => write!(f, "LDC {:4}", *index),
-            Negate          => write!(f, "NEG"),
-            Add             => write!(f, "ADD"),
-            Subtract        => write!(f, "SUB"),
-            Multiply        => write!(f, "MUL"),
-            Divide          => write!(f, "DIV"),
-            True            => write!(f, "TRU"),
-            False           => write!(f, "FAL"),
-            Nil             => write!(f, "NIL"),
-            Not             => write!(f, "NOT"),
-            Equal           => write!(f, "EQC"),
-            Greater         => write!(f, "GTC"),
-            Less            => write!(f, "LTC"),
-            Print           => write!(f, "PRT"),
-            Pop             => write!(f, "POP"),
-            DefineGlobal(index)    => write!(f, "GLB {:4}", *index)
+            Return              => write!(f, "RET"),
+            Constant(index)     => write!(f, "LDC {:4}", *index),
+            Negate              => write!(f, "NEG"),
+            Add                 => write!(f, "ADD"),
+            Subtract            => write!(f, "SUB"),
+            Multiply            => write!(f, "MUL"),
+            Divide              => write!(f, "DIV"),
+            True                => write!(f, "TRU"),
+            False               => write!(f, "FAL"),
+            Nil                 => write!(f, "NIL"),
+            Not                 => write!(f, "NOT"),
+            Equal               => write!(f, "EQC"),
+            Greater             => write!(f, "GTC"),
+            Less                => write!(f, "LTC"),
+            Print               => write!(f, "PRT"),
+            Pop                 => write!(f, "POP"),
+            DefineGlobal(index) => write!(f, "DGL {:4}", *index),
+            GetGlobal(index)    => write!(f, "GGL {:4}", *index),
+            SetGlobal(index)    => write!(f, "SGL {:4}", *index)
         }
     }
 }

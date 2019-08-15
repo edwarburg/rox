@@ -573,32 +573,54 @@ impl<'a> Parser<'a> {
     fn parse_precedence(&mut self, precedence: Precedence) {
         self.advance();
         let prefix_fn = Parser::get_rule(self.prev.ty).prefix;
-        prefix_fn(self);
+        let can_assign = precedence <= Precedence::Assignment;
+        prefix_fn(self, can_assign);
 
         while precedence <= Parser::get_rule(self.curr.ty).precedence {
             self.advance();
             let infix_fn = Parser::get_rule(self.prev.ty).infix;
-            infix_fn(self);
+            infix_fn(self, can_assign);
+        }
+
+        if can_assign && self.maybe_consume(TokenType::Equal) {
+            self.error_at_current("Invalid assignment target.".to_owned());
+            self.expression();
         }
     }
 
-    fn number(&mut self) {
+    fn number(&mut self, can_assign: bool) {
         let parsed = self.prev.text.parse::<f64>().expect("number token was not parsable as double");
         self.emit_constant(Value::Number(parsed));
     }
 
-    fn string(&mut self) {
+    fn string(&mut self, can_assign: bool) {
         let string = String::from(self.prev.text.deref());
         let loxstr = crate::value::allocate_string(string.borrow(), self.context);
         self.emit_constant(Value::Object(loxstr));
     }
 
-    fn grouping(&mut self) {
+    fn variable(&mut self, can_assign: bool) {
+        self.named_variable(&self.prev.clone(), can_assign);
+    }
+
+    fn named_variable(&mut self, name: &Token, can_assign: bool) {
+        let arg = self.identifier_constant(name.text.deref());
+        if can_assign && self.maybe_consume(TokenType::Equal) {
+            // this is the lhs of an assignment, eg, `a = 2;`
+            self.expression();
+            self.emit(Instruction::SetGlobal(arg));
+        } else {
+            // this is a normal reference to a variable
+            self.emit(Instruction::GetGlobal(arg));
+        }
+    }
+
+    fn grouping(&mut self, can_assign: bool) {
         self.expression();
         self.consume(TokenType::RightParen, String::from("Expect ')' after expression"));
     }
 
-    fn literal(&mut self) {
+    fn literal(&mut self, can_assign: bool) {
         match self.prev.ty {
             TokenType::True => self.emit(Instruction::True),
             TokenType::False => self.emit(Instruction::False),
@@ -610,7 +632,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn unary(&mut self) {
+    fn unary(&mut self, can_assign: bool) {
         let operator_type = self.prev.ty;
 
         self.parse_precedence(Precedence::Unary);
@@ -625,7 +647,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn binary(&mut self) {
+    fn binary(&mut self, can_assign: bool) {
         let operator_type = self.prev.ty;
         let parse_rule = Parser::get_rule(operator_type);
         self.parse_precedence(parse_rule.precedence.next().expect("already at highest precedence"));
@@ -718,7 +740,7 @@ impl Precedence {
     }
 }
 
-type ParseFn = fn(&mut Parser) -> ();
+type ParseFn = fn(&mut Parser, bool) -> ();
 
 struct ParseRule {
     prefix: ParseFn,
@@ -727,14 +749,15 @@ struct ParseRule {
 }
 
 // TODO avoid clone
-static FAIL: ParseFn = |p| { p.error_at(&p.prev.clone(), String::from("Expected expression")); };
+static FAIL: ParseFn = |p, _| { p.error_at(&p.prev.clone(), String::from("Expected expression")); };
 // TODO how to make these just a reference to the method, eg, `Parser::grouping`, rather than a lambda over it?
-static GROUPING: ParseFn = |p| p.grouping();
-static LITERAL: ParseFn = |p| p.literal();
-static UNARY: ParseFn = |p| p.unary();
-static BINARY: ParseFn = |p| p.binary();
-static NUMBER: ParseFn = |p| p.number();
-static STRING: ParseFn = |p| p.string();
+static GROUPING: ParseFn = |p, a| p.grouping(a);
+static LITERAL: ParseFn = |p, a| p.literal(a);
+static UNARY: ParseFn = |p, a| p.unary(a);
+static BINARY: ParseFn = |p, a| p.binary(a);
+static NUMBER: ParseFn = |p, a| p.number(a);
+static STRING: ParseFn = |p, a| p.string(a);
+static VARIABLE: ParseFn = |p, a| p.variable(a);
 
 static RULE_LEFT_PAREN: ParseRule    = ParseRule { prefix: GROUPING, infix: FAIL,   precedence: Precedence::None };
 static RULE_RIGHT_PAREN: ParseRule   = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
@@ -755,7 +778,7 @@ static RULE_GREATER: ParseRule       = ParseRule { prefix: FAIL,     infix: BINA
 static RULE_GREATER_EQUAL: ParseRule = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Comparison };
 static RULE_LESS: ParseRule          = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Comparison };
 static RULE_LESS_EQUAL: ParseRule    = ParseRule { prefix: FAIL,     infix: BINARY, precedence: Precedence::Comparison };
-static RULE_IDENTIFIER: ParseRule    = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
+static RULE_IDENTIFIER: ParseRule    = ParseRule { prefix: VARIABLE, infix: FAIL,   precedence: Precedence::None };
 static RULE_STRING: ParseRule        = ParseRule { prefix: STRING,   infix: FAIL,   precedence: Precedence::None };
 static RULE_NUMBER: ParseRule        = ParseRule { prefix: NUMBER,   infix: FAIL,   precedence: Precedence::None };
 static RULE_AND: ParseRule           = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };

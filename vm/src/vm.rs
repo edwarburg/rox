@@ -4,6 +4,7 @@ use crate::value::{Value, allocate_string, ObjRef};
 use crate::context::LoxContext;
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::env::var;
 
 // TODO move to lib.rs? otherwise stuff in here is `vm::vm::Thing`
 
@@ -29,6 +30,10 @@ impl Stack {
 
     fn pop(&mut self) -> Result<Value, InterpretError> {
         self.slots.pop().ok_or(InterpretError::PoppedEmptyStack)
+    }
+
+    fn peek(&mut self) -> Option<&Value> {
+        self.slots.last()
     }
 }
 
@@ -66,6 +71,7 @@ pub enum InterpretError {
     CompileError(compiler::CompileError),
     UnknownInstruction(usize),
     UnknownValue(Value),
+    UndefinedVariable(String),
     TypeError(String),
     NoReturn,
     PoppedEmptyStack
@@ -117,7 +123,7 @@ impl VM<'_> {
                         (lhs @ Value::Object(_), rhs @ Value::Object(_)) if lhs.is_string() && rhs.is_string() => {
                             Value::Object(allocate_string([lhs.as_string(), rhs.as_string()].concat().borrow(), self.context))
                         }
-                        _ => return Err(InterpretError::TypeError(format!("Cannot add {} and {} because they are the wrong type(s)", lhs, rhs)))
+                        _ => return Err(InterpretError::TypeError(self.error_msg(format!("Cannot add {} and {} because they are the wrong type(s)", lhs, rhs))))
                     };
                     self.stack.push(result);
                 }
@@ -141,7 +147,7 @@ impl VM<'_> {
                 Print => {
                     let to_print = self.stack.pop()?;
                     if DEBUG {
-                        print!("\nstout ==> ");
+                        print!("\nstdout ==> ");
                     }
                     println!("{}", &to_print);
 
@@ -152,6 +158,23 @@ impl VM<'_> {
                 DefineGlobal(index) => {
                     let var_name = self.read_constant(*index).as_string().to_owned();
                     self.globals.insert(var_name, self.stack.pop()?);
+                },
+                GetGlobal(index) => {
+                    let var_name = self.read_constant(*index).as_string();
+                    if let Some(var) = self.globals.get(var_name) {
+                        self.stack.push(var.clone());
+                    } else {
+                        return Err(InterpretError::UndefinedVariable(self.error_msg(format!("Undefined variable '{}'", var_name))));
+                    }
+                }
+                SetGlobal(index) => {
+                    let var_name = self.read_constant(*index).as_string().to_owned();
+                    if let Some(top) = self.stack.peek() {
+                        let result = self.globals.insert(var_name.clone(), top.clone());
+                        if result.is_none() {
+                            return Err(InterpretError::UndefinedVariable(self.error_msg(format!("Undefined variable '{}'", var_name))))
+                        }
+                    }
                 }
             }
 
