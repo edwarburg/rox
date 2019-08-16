@@ -172,7 +172,9 @@ instructions! {
     Pop => 1,
     DefineGlobal(ConstantPoolIndex) => 2,
     GetGlobal(ConstantPoolIndex) => 2,
-    SetGlobal(ConstantPoolIndex) => 2
+    SetGlobal(ConstantPoolIndex) => 2,
+    GetLocal(ConstantPoolIndex) => 2,
+    SetLocal(ConstantPoolIndex) => 2
 }
 
 impl fmt::Display for Instruction {
@@ -197,8 +199,10 @@ impl fmt::Display for Instruction {
             Print               => write!(f, "PRT"),
             Pop                 => write!(f, "POP"),
             DefineGlobal(index) => write!(f, "DGL {:4}", *index),
-            GetGlobal(index)    => write!(f, "GGL {:4}", *index),
-            SetGlobal(index)    => write!(f, "SGL {:4}", *index)
+            GetGlobal(index)    => write!(f, "GGV {:4}", *index),
+            SetGlobal(index)    => write!(f, "SGV {:4}", *index),
+            GetLocal(index)     => write!(f, "GLV {:4}", *index),
+            SetLocal(index)           => write!(f, "SLV {:4}", *index)
         }
     }
 }

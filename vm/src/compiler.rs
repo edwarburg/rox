@@ -1,5 +1,5 @@
 use crate::chunk::{Chunk, LineNumber, Instruction, ChunkError, ConstantPoolIndex, MAX_CONSTANTS};
-use std::borrow::{Cow, Borrow};
+use std::borrow::{Cow, Borrow, BorrowMut};
 use std::fmt;
 use std::ops::Deref;
 use crate::value::{Value, allocate_string};
@@ -34,10 +34,37 @@ impl From<CompileError> for InterpretError {
     }
 }
 
+const LOCALS_MAX: usize = (std::u8::MAX as usize) + 1;
 
-pub fn compile(input: &str, context: &mut LoxContext) -> Result<Chunk, CompileError> {
+#[derive(Debug, Clone)]
+struct Local<'a> {
+    token: Token<'a>,
+    depth: i32
+}
+
+pub struct Compiler<'a> {
+    context: &'a mut LoxContext,
+    locals: Vec<Local<'a>>,
+    scope_depth: i32,
+}
+
+impl<'a> Compiler<'a> {
+    fn add_local(&mut self, token: Token<'a>) {
+        self.locals.push(Local {
+            token,
+            depth: -1
+        });
+    }
+}
+
+pub fn compile<'a>(input: &'a str, context: &'a mut LoxContext) -> Result<Chunk, CompileError> {
     let mut scanner = Scanner::new(input);
-    let parser = Parser::new(&mut scanner, context);
+    // TODO kinda weird we have this other thing called `Compiler` here, maybe there's a reason we'll need it later...
+    let parser = Parser::new(&mut scanner, Compiler {
+        context,
+        locals: Vec::with_capacity(LOCALS_MAX),
+        scope_depth: 0
+    });
     let result = parser.parse();
     if DEBUG {
         result.as_ref().map(|chunk| println!("{:?}", chunk));
@@ -379,7 +406,7 @@ impl fmt::Display for TokenType {
 struct Parser<'a> {
     chunk: Chunk,
     scanner: &'a mut Scanner<'a>,
-    context: &'a mut LoxContext,
+    compiler: Compiler<'a>,
     curr: Token<'a>,
     prev: Token<'a>,
     panic_mode: bool,
@@ -387,7 +414,7 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    fn new(scanner: &'a mut Scanner<'a>, context: &'a mut LoxContext) -> Parser<'a> {
+    fn new(scanner: &'a mut Scanner<'a>, compiler: Compiler<'a>) -> Parser<'a> {
         let initial_token = Token {
             ty: TokenType::Error,
             text: Cow::Borrowed("nothing scanned yet"),
@@ -396,7 +423,7 @@ impl<'a> Parser<'a> {
         Parser {
             chunk: Chunk::new(),
             scanner,
-            context,
+            compiler,
             curr: initial_token.clone(),
             prev: initial_token.clone(),
             panic_mode: false,
@@ -491,6 +518,7 @@ impl<'a> Parser<'a> {
     // grammar rules
 
     fn declaration(&mut self) {
+        println!("declaration");
         if self.maybe_consume(TokenType::Var) {
             self.var_declaration()
         } else {
@@ -529,30 +557,70 @@ impl<'a> Parser<'a> {
         }
 
         self.consume(TokenType::Semicolon, "Expect ';' after variable declaration.".to_owned());
-        self.declare_variable(variable_name_index);
+        self.define_variable(variable_name_index);
     }
 
     fn parse_variable(&mut self, error_msg: String) -> ConstantPoolIndex {
         self.consume(TokenType::Identifier, error_msg);
+
+        self.declare_variable();
+        if self.compiler.scope_depth > 0 {
+            return 0;
+        }
+
         let cow = self.prev.text.clone();
         let var_name = cow.deref();
         self.identifier_constant(var_name)
     }
 
     fn identifier_constant(&mut self, str: &str) -> ConstantPoolIndex {
-        let obj_ref = allocate_string(str, self.context);
+        let obj_ref = allocate_string(str, self.compiler.context);
         self.chunk.add_constant(Value::Object(obj_ref))
             .map_err(|e| self.push_error(e.into()))
             .unwrap_or(MAX_CONSTANTS as ConstantPoolIndex)
     }
 
-    fn declare_variable(&mut self, index: ConstantPoolIndex) {
+    fn declare_variable(&mut self) {
+        if self.compiler.scope_depth == 0 {
+            return;
+        }
+        for i in (0..self.compiler.locals.len()).rev() {
+            let local = &self.compiler.locals[i];
+            if local.depth != -1 && local.depth < self.compiler.scope_depth {
+                break;
+            }
+
+            if local.token.text.deref().eq(self.prev.text.deref()) {
+                self.error_at_current("Variable with this name already defined in this scope.".to_owned());
+            }
+        }
+        self.compiler.add_local(self.prev.clone())
+    }
+
+    fn define_variable(&mut self, index: ConstantPoolIndex) {
+        if self.compiler.scope_depth > 0 {
+            self.mark_initialized();
+            return;
+        }
         self.emit(Instruction::DefineGlobal(index));
+    }
+
+    fn mark_initialized(&mut self) {
+        if self.compiler.scope_depth == 0 {
+            return;
+        }
+        let local = self.compiler.locals.last_mut().unwrap();
+
+        local.depth = self.compiler.scope_depth;
     }
 
     fn statement(&mut self) {
         if self.maybe_consume(TokenType::Print) {
             self.print_statement();
+        } else if self.maybe_consume(TokenType::LeftBrace) {
+            self.beginScope();
+            self.block();
+            self.endScope();
         } else {
             self.expression_statement();
         }
@@ -562,6 +630,27 @@ impl<'a> Parser<'a> {
         self.expression();
         self.consume(TokenType::Semicolon, "Expected ';' after value.".to_owned());
         self.emit(Instruction::Print);
+    }
+
+    fn beginScope(&mut self) {
+        self.compiler.scope_depth += 1;
+    }
+
+    fn endScope(&mut self) {
+        self.compiler.scope_depth -= 1;
+
+        while let Some(true) = self.compiler.locals.last().map(|l| l.depth > self.compiler.scope_depth) {
+            self.emit(Instruction::Pop);
+            self.compiler.locals.pop();
+        }
+    }
+
+    fn block(&mut self) {
+        while self.curr.ty != TokenType::RightBrace && self.curr.ty != TokenType::Eof {
+            self.declaration();
+        }
+
+        self.consume(TokenType::RightBrace, "Expect '}' after block.".to_owned());
     }
 
     fn expression_statement(&mut self) {
@@ -595,7 +684,7 @@ impl<'a> Parser<'a> {
 
     fn string(&mut self, can_assign: bool) {
         let string = String::from(self.prev.text.deref());
-        let loxstr = crate::value::allocate_string(string.borrow(), self.context);
+        let loxstr = crate::value::allocate_string(string.borrow(), self.compiler.context);
         self.emit_constant(Value::Object(loxstr));
     }
 
@@ -604,15 +693,40 @@ impl<'a> Parser<'a> {
     }
 
     fn named_variable(&mut self, name: &Token, can_assign: bool) {
-        let arg = self.identifier_constant(name.text.deref());
+        let mut get_op = Instruction::Nil;
+        let mut set_op = Instruction::Nil;
+        if let Some(arg) = self.resolve_local(name) {
+            get_op = Instruction::GetLocal(arg);
+            set_op = Instruction::SetLocal(arg);
+        } else {
+            let arg = self.identifier_constant(name.text.deref());
+            get_op = Instruction::GetGlobal(arg);
+            set_op = Instruction::SetGlobal(arg);
+        }
+
         if can_assign && self.maybe_consume(TokenType::Equal) {
             // this is the lhs of an assignment, eg, `a = 2;`
             self.expression();
-            self.emit(Instruction::SetGlobal(arg));
+            self.emit(set_op);
         } else {
             // this is a normal reference to a variable
-            self.emit(Instruction::GetGlobal(arg));
+            self.emit(get_op);
         }
+    }
+
+    fn resolve_local(&mut self, name: &Token) -> Option<ConstantPoolIndex> {
+        for i in (0..self.compiler.locals.len()).rev() {
+            let local = &self.compiler.locals[i];
+
+            if local.token.text.deref().eq(self.prev.text.deref()) {
+                if local.depth == -1 {
+                    self.error_at_current("Cannot read local variable in its own initializer.".to_owned());
+                }
+                return Some(i as ConstantPoolIndex);
+            }
+        }
+
+        None
     }
 
     fn grouping(&mut self, can_assign: bool) {
@@ -802,7 +916,7 @@ static RULE_EOF: ParseRule           = ParseRule { prefix: FAIL,     infix: FAIL
 
 #[cfg(test)]
 mod tests {
-    use crate::compiler::{compile, Scanner, TokenType};
+    use crate::compiler::{compile, Scanner, TokenType, Compiler};
     use crate::context::LoxContext;
 
     #[test]

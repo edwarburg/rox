@@ -166,7 +166,7 @@ impl VM<'_> {
                     } else {
                         return Err(InterpretError::UndefinedVariable(self.error_msg(format!("Undefined variable '{}'", var_name))));
                     }
-                }
+                },
                 SetGlobal(index) => {
                     let var_name = self.read_constant(*index).as_string().to_owned();
                     if let Some(top) = self.stack.peek() {
@@ -175,6 +175,13 @@ impl VM<'_> {
                             return Err(InterpretError::UndefinedVariable(self.error_msg(format!("Undefined variable '{}'", var_name))))
                         }
                     }
+                },
+                GetLocal(index) => {
+                    let val = self.stack.slots[*index as usize].clone();
+                    self.stack.push(val);
+                },
+                SetLocal(index) => {
+                    self.stack.slots[*index as usize] = self.stack.peek().unwrap().clone();
                 }
             }
 
