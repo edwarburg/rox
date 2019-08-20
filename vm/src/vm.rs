@@ -174,6 +174,8 @@ impl VM<'_> {
                         if result.is_none() {
                             return Err(InterpretError::UndefinedVariable(self.error_msg(format!("Undefined variable '{}'", var_name))))
                         }
+                    } else {
+                        return Err(InterpretError::UndefinedVariable(self.error_msg(format!("Undefined variable '{}'", var_name))));
                     }
                 },
                 GetLocal(index) => {
@@ -182,6 +184,23 @@ impl VM<'_> {
                 },
                 SetLocal(index) => {
                     self.stack.slots[*index as usize] = self.stack.peek().unwrap().clone();
+                },
+                Jump(offset) => {
+                    self.ip += *offset;
+                    if DEBUG {
+                        println!();
+                    }
+                    continue 'interpret;
+                }
+                JumpIfFalse(offset) => {
+                    let top = self.stack.peek().ok_or(InterpretError::PoppedEmptyStack)?;
+                    if !VM::coerce_bool(top) {
+                        self.ip += *offset;
+                        if DEBUG {
+                            println!();
+                        }
+                        continue 'interpret;
+                    }
                 }
             }
 

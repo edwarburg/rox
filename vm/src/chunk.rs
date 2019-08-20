@@ -54,6 +54,10 @@ impl Chunk {
         self.instructions.push(instruction)
     }
 
+    pub fn set_instruction_at(&mut self, at: usize, instruction: Instruction) {
+        *self.instructions.get_mut(at).unwrap() = instruction;
+    }
+
     pub fn instructions(&self) -> &[Instruction] {
         &self.instructions[..]
     }
@@ -109,7 +113,7 @@ macro_rules! replace_tt {
 
 macro_rules! instructions {
     ( $( $name:ident $( ( $( $t:ty ),* ) )? => $size:expr ),* ) => {
-        #[derive(Debug, Eq, PartialOrd, PartialEq)]
+        #[derive(Debug, Eq, PartialOrd, PartialEq, Copy, Clone)]
         pub enum Instruction {
             $(
                 $name$(($($t)*))?,
@@ -174,7 +178,9 @@ instructions! {
     GetGlobal(ConstantPoolIndex) => 2,
     SetGlobal(ConstantPoolIndex) => 2,
     GetLocal(ConstantPoolIndex) => 2,
-    SetLocal(ConstantPoolIndex) => 2
+    SetLocal(ConstantPoolIndex) => 2,
+    Jump(usize) => 2,
+    JumpIfFalse(usize) => 2
 }
 
 impl fmt::Display for Instruction {
@@ -202,7 +208,9 @@ impl fmt::Display for Instruction {
             GetGlobal(index)    => write!(f, "GGV {:4}", *index),
             SetGlobal(index)    => write!(f, "SGV {:4}", *index),
             GetLocal(index)     => write!(f, "GLV {:4}", *index),
-            SetLocal(index)           => write!(f, "SLV {:4}", *index)
+            SetLocal(index)           => write!(f, "SLV {:4}", *index),
+            Jump(offset)           => write!(f, "JMP {:4}", *offset),
+            JumpIfFalse(offset)           => write!(f, "JIF {:4}", *offset)
         }
     }
 }

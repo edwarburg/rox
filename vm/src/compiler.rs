@@ -618,9 +618,11 @@ impl<'a> Parser<'a> {
         if self.maybe_consume(TokenType::Print) {
             self.print_statement();
         } else if self.maybe_consume(TokenType::LeftBrace) {
-            self.beginScope();
+            self.begin_scope();
             self.block();
-            self.endScope();
+            self.end_scope();
+        } else if self.maybe_consume(TokenType::If) {
+            self.if_statement();
         } else {
             self.expression_statement();
         }
@@ -632,11 +634,11 @@ impl<'a> Parser<'a> {
         self.emit(Instruction::Print);
     }
 
-    fn beginScope(&mut self) {
+    fn begin_scope(&mut self) {
         self.compiler.scope_depth += 1;
     }
 
-    fn endScope(&mut self) {
+    fn end_scope(&mut self) {
         self.compiler.scope_depth -= 1;
 
         while let Some(true) = self.compiler.locals.last().map(|l| l.depth > self.compiler.scope_depth) {
@@ -651,6 +653,40 @@ impl<'a> Parser<'a> {
         }
 
         self.consume(TokenType::RightBrace, "Expect '}' after block.".to_owned());
+    }
+
+    fn if_statement(&mut self) {
+        self.consume(TokenType::LeftParen, "".to_owned());
+        self.expression();
+        self.consume(TokenType::RightParen, "".to_owned());
+
+        let then_jump = self.emit_jump(Instruction::JumpIfFalse(0));
+        self.emit(Instruction::Pop);
+        self.statement();
+        let else_jump = self.emit_jump(Instruction::Jump(0));
+        self.patch_jump(then_jump);
+        self.emit(Instruction::Pop);
+
+        if self.maybe_consume(TokenType::Else) {
+            self.statement();
+        }
+        self.patch_jump(else_jump);
+    }
+
+    fn emit_jump(&mut self, jump: Instruction) -> usize {
+        let index = self.chunk.instructions().len();
+        self.emit(jump);
+        index
+    }
+
+    fn patch_jump(&mut self, at: usize) {
+        let index = self.chunk.instructions().len();
+        let new_inst = match self.chunk.instructions().get(at).unwrap() {
+            Instruction::Jump(o) => Instruction::Jump(index - at),
+            Instruction::JumpIfFalse(o) => Instruction::JumpIfFalse(index - at),
+            _ => panic!("instruction at {} is not a jump", at)
+        };
+        self.chunk.set_instruction_at(at, new_inst);
     }
 
     fn expression_statement(&mut self) {
@@ -785,6 +821,25 @@ impl<'a> Parser<'a> {
         self.parse_precedence(Precedence::Assignment);
     }
 
+    fn and(&mut self, can_assign: bool) {
+        let and_jump = self.emit_jump(Instruction::JumpIfFalse(0));
+
+        self.emit(Instruction::Pop);
+        self.parse_precedence(Precedence::And);
+
+        self.patch_jump(and_jump);
+    }
+
+    fn or(&mut self, can_assign: bool) {
+        let else_jump = self.emit_jump(Instruction::JumpIfFalse(0));
+        let end_jump = self.emit_jump(Instruction::Jump(0));
+        self.patch_jump(else_jump);
+        self.emit(Instruction::Pop);
+        self.parse_precedence(Precedence::Or);
+        self.patch_jump(end_jump);
+
+    }
+
     fn get_rule(ty: TokenType) -> &'static ParseRule {
         use TokenType::*;
         match ty {
@@ -872,6 +927,8 @@ static BINARY: ParseFn = |p, a| p.binary(a);
 static NUMBER: ParseFn = |p, a| p.number(a);
 static STRING: ParseFn = |p, a| p.string(a);
 static VARIABLE: ParseFn = |p, a| p.variable(a);
+static AND: ParseFn = |p, a| p.and(a);
+static OR: ParseFn = |p, a| p.or(a);
 
 static RULE_LEFT_PAREN: ParseRule    = ParseRule { prefix: GROUPING, infix: FAIL,   precedence: Precedence::None };
 static RULE_RIGHT_PAREN: ParseRule   = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
@@ -895,7 +952,7 @@ static RULE_LESS_EQUAL: ParseRule    = ParseRule { prefix: FAIL,     infix: BINA
 static RULE_IDENTIFIER: ParseRule    = ParseRule { prefix: VARIABLE, infix: FAIL,   precedence: Precedence::None };
 static RULE_STRING: ParseRule        = ParseRule { prefix: STRING,   infix: FAIL,   precedence: Precedence::None };
 static RULE_NUMBER: ParseRule        = ParseRule { prefix: NUMBER,   infix: FAIL,   precedence: Precedence::None };
-static RULE_AND: ParseRule           = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
+static RULE_AND: ParseRule           = ParseRule { prefix: FAIL,     infix: AND,    precedence: Precedence::And };
 static RULE_CLASS: ParseRule         = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_ELSE: ParseRule          = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_FALSE: ParseRule         = ParseRule { prefix: LITERAL,  infix: FAIL,   precedence: Precedence::None };
@@ -903,7 +960,7 @@ static RULE_FOR: ParseRule           = ParseRule { prefix: FAIL,     infix: FAIL
 static RULE_FUN: ParseRule           = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_IF: ParseRule            = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_NIL: ParseRule           = ParseRule { prefix: LITERAL,  infix: FAIL,   precedence: Precedence::None };
-static RULE_OR: ParseRule            = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
+static RULE_OR: ParseRule            = ParseRule { prefix: FAIL,     infix: OR,     precedence: Precedence::Or };
 static RULE_PRINT: ParseRule         = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_RETURN: ParseRule        = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
 static RULE_SUPER: ParseRule         = ParseRule { prefix: FAIL,     infix: FAIL,   precedence: Precedence::None };
