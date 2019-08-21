@@ -180,7 +180,8 @@ instructions! {
     GetLocal(ConstantPoolIndex) => 2,
     SetLocal(ConstantPoolIndex) => 2,
     Jump(usize) => 2,
-    JumpIfFalse(usize) => 2
+    JumpIfFalse(usize) => 2,
+    Loop(usize) => 2
 }
 
 impl fmt::Display for Instruction {
@@ -188,29 +189,30 @@ impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Instruction::*;
         match self {
-            Return              => write!(f, "RET"),
-            Constant(index)     => write!(f, "LDC {:4}", *index),
-            Negate              => write!(f, "NEG"),
-            Add                 => write!(f, "ADD"),
-            Subtract            => write!(f, "SUB"),
-            Multiply            => write!(f, "MUL"),
-            Divide              => write!(f, "DIV"),
-            True                => write!(f, "TRU"),
-            False               => write!(f, "FAL"),
-            Nil                 => write!(f, "NIL"),
-            Not                 => write!(f, "NOT"),
-            Equal               => write!(f, "EQC"),
-            Greater             => write!(f, "GTC"),
-            Less                => write!(f, "LTC"),
-            Print               => write!(f, "PRT"),
-            Pop                 => write!(f, "POP"),
-            DefineGlobal(index) => write!(f, "DGL {:4}", *index),
-            GetGlobal(index)    => write!(f, "GGV {:4}", *index),
-            SetGlobal(index)    => write!(f, "SGV {:4}", *index),
-            GetLocal(index)     => write!(f, "GLV {:4}", *index),
-            SetLocal(index)           => write!(f, "SLV {:4}", *index),
-            Jump(offset)           => write!(f, "JMP {:4}", *offset),
-            JumpIfFalse(offset)           => write!(f, "JIF {:4}", *offset)
+            Return              => write!(f, "RET   "),
+            Constant(index)     => write!(f, "LDC   {:4}", *index),
+            Negate              => write!(f, "NEG   "),
+            Add                 => write!(f, "ADD   "),
+            Subtract            => write!(f, "SUB   "),
+            Multiply            => write!(f, "MUL   "),
+            Divide              => write!(f, "DIV   "),
+            True                => write!(f, "TRUE  "),
+            False               => write!(f, "FALSE "),
+            Nil                 => write!(f, "NIL   "),
+            Not                 => write!(f, "NOT   "),
+            Equal               => write!(f, "EQL   "),
+            Greater             => write!(f, "GT    "),
+            Less                => write!(f, "LT    "),
+            Print               => write!(f, "PRINT "),
+            Pop                 => write!(f, "POP   "),
+            DefineGlobal(index) => write!(f, "DGLO   {:4}", *index),
+            GetGlobal(index)    => write!(f, "GGLO   {:4}", *index),
+            SetGlobal(index)    => write!(f, "SGLO   {:4}", *index),
+            GetLocal(index)     => write!(f, "GLOC   {:4}", *index),
+            SetLocal(index)     => write!(f, "SLOC   {:4}", *index),
+            Jump(offset)        => write!(f, "JUMP   {:4}", *offset),
+            JumpIfFalse(offset) => write!(f, "JFALSE  {:4}", *offset),
+            Loop(offset)        => write!(f, "LOOP   {:4}", *offset),
         }
     }
 }

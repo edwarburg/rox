@@ -191,7 +191,7 @@ impl VM<'_> {
                         println!();
                     }
                     continue 'interpret;
-                }
+                },
                 JumpIfFalse(offset) => {
                     let top = self.stack.peek().ok_or(InterpretError::PoppedEmptyStack)?;
                     if !VM::coerce_bool(top) {
@@ -201,6 +201,13 @@ impl VM<'_> {
                         }
                         continue 'interpret;
                     }
+                },
+                Loop(offset) => {
+                    self.ip -= *offset;
+                    if DEBUG {
+                        println!();
+                    }
+                    continue 'interpret;
                 }
             }
 

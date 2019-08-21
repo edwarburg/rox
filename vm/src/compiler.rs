@@ -6,6 +6,7 @@ use crate::value::{Value, allocate_string};
 use crate::vm::InterpretError;
 use crate::context::LoxContext;
 use crate::DEBUG;
+use std::process::exit;
 
 #[derive(Debug)]
 pub enum CompileError {
@@ -518,7 +519,6 @@ impl<'a> Parser<'a> {
     // grammar rules
 
     fn declaration(&mut self) {
-        println!("declaration");
         if self.maybe_consume(TokenType::Var) {
             self.var_declaration()
         } else {
@@ -623,6 +623,10 @@ impl<'a> Parser<'a> {
             self.end_scope();
         } else if self.maybe_consume(TokenType::If) {
             self.if_statement();
+        } else if self.maybe_consume(TokenType::While) {
+            self.while_statement();
+        } else if self.maybe_consume(TokenType::For) {
+            self.for_statement();
         } else {
             self.expression_statement();
         }
@@ -671,6 +675,71 @@ impl<'a> Parser<'a> {
             self.statement();
         }
         self.patch_jump(else_jump);
+    }
+
+    fn while_statement(&mut self) {
+        let top = self.chunk.instructions().len();
+        self.consume(TokenType::LeftParen, "Expect '(' after while.".to_owned());
+        self.expression();
+        self.consume(TokenType::RightParen, "Expect ')' after condition.".to_owned());
+
+        let exit_jump = self.emit_jump(Instruction::JumpIfFalse(0));
+        self.emit(Instruction::Pop);
+        self.statement();
+        self.emit_loop(top);
+        self.patch_jump(exit_jump);
+        self.emit(Instruction::Pop);
+    }
+
+    fn for_statement(&mut self) {
+        self.begin_scope();
+
+        self.consume(TokenType::LeftParen, "Expect '(' after for.".to_owned());
+
+        if self.maybe_consume(TokenType::Var) {
+            self.var_declaration();
+        } else if self.maybe_consume(TokenType::Semicolon) {
+            // no initializer
+        } else {
+            self.expression_statement();
+        }
+
+        let mut loop_start = self.chunk.instructions().len();
+
+        let mut exit_jump: Option<usize> = None;
+
+        if !self.maybe_consume(TokenType::Semicolon) {
+            self.expression();
+            self.consume(TokenType::Semicolon, "Expect ';' after loop condition.".to_owned());
+            exit_jump = Some(self.emit_jump(Instruction::JumpIfFalse(0)));
+            self.emit(Instruction::Pop);
+        }
+
+        if !self.maybe_consume(TokenType::RightParen) {
+            let body_jump = self.emit_jump(Instruction::Jump(0));
+
+            let increment_start = self.chunk.instructions().len();
+            self.expression();
+            self.emit(Instruction::Pop);
+            self.consume(TokenType::RightParen, "Expected ')' after for clauses.".to_owned());
+
+            self.emit_loop(loop_start);
+            loop_start = increment_start;
+            self.patch_jump(body_jump);
+        }
+
+        self.statement();
+        self.emit_loop(loop_start);
+        if let Some(exit_jump) = exit_jump {
+            self.patch_jump(exit_jump);
+            self.emit(Instruction::Pop);
+        }
+
+        self.end_scope();
+    }
+
+    fn emit_loop(&mut self, jump_to: usize) {
+        self.emit(Instruction::Loop(self.chunk.instructions().len() - jump_to))
     }
 
     fn emit_jump(&mut self, jump: Instruction) -> usize {
